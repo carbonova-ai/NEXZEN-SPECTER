@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-nexzen-bg: #000000;
+  --color-nexzen-surface: #0a0a0a;
+  --color-nexzen-card: #111111;
+  --color-nexzen-primary: #00ff41;
+  --color-nexzen-primary-dim: #00cc33;
+  --color-nexzen-danger: #ff4444;
+  --color-nexzen-text: #e5e5e5;
+  --color-nexzen-muted: #666666;
+  --color-nexzen-border: #222222;
+
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+
+  --animate-pulse-glow: pulse-glow 2s ease-in-out infinite;
+  --animate-scan-line: scan-line 4s linear infinite;
+  --animate-flash-green: flash-green 0.3s ease-out;
+  --animate-flash-red: flash-red 0.3s ease-out;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@keyframes scan-line {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+@keyframes flash-green {
+  0% { background-color: rgba(0, 255, 65, 0.15); }
+  100% { background-color: transparent; }
+}
+
+@keyframes flash-red {
+  0% { background-color: rgba(255, 68, 68, 0.15); }
+  100% { background-color: transparent; }
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #222 #000;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: #000;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+
+body {
+  background: #000000;
+  color: #e5e5e5;
+  font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+  min-height: 100vh;
+}
+
+.glass-card {
+  background: rgba(17, 17, 17, 0.6);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(0, 255, 65, 0.08);
+  border-radius: 0.5rem;
+}
+
+.glass-card-hover:hover {
+  border-color: rgba(0, 255, 65, 0.2);
+}
+
+.glow-text {
+  text-shadow: 0 0 10px rgba(0, 255, 65, 0.5), 0 0 20px rgba(0, 255, 65, 0.3);
+}
+
+.glow-dot {
+  box-shadow: 0 0 6px currentColor, 0 0 12px currentColor;
+}
