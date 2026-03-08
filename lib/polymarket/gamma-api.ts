@@ -19,6 +19,13 @@ export async function fetchCryptoEvents(): Promise<PolymarketEvent[]> {
   return res.json();
 }
 
+function parseJsonField<T>(value: T | string): T {
+  if (typeof value === 'string') {
+    try { return JSON.parse(value); } catch { return value as T; }
+  }
+  return value;
+}
+
 export function filterBTCMarkets(events: PolymarketEvent[]): PolymarketMarket[] {
   const markets: PolymarketMarket[] = [];
 
@@ -31,7 +38,12 @@ export function filterBTCMarkets(events: PolymarketEvent[]): PolymarketMarket[] 
       const combined = `${questionLower} ${titleLower}`;
 
       const isBTC = BTC_KEYWORDS.some(kw => combined.includes(kw));
-      if (isBTC) markets.push(market);
+      if (isBTC) {
+        // Gamma API returns these as JSON strings — parse into real arrays
+        market.clobTokenIds = parseJsonField<string[]>(market.clobTokenIds);
+        market.outcomePrices = parseJsonField<string[]>(market.outcomePrices);
+        markets.push(market);
+      }
     }
   }
 
