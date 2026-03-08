@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const url = `${CLOB_BASE}/book?token_id=${encodeURIComponent(tokenId)}`;
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
 
     if (!response.ok) {
       return NextResponse.json(

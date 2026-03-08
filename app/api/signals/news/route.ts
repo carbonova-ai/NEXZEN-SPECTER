@@ -16,7 +16,7 @@ async function fetchCryptoNews(): Promise<NewsArticle[]> {
   try {
     const res = await fetch(
       `${CRYPTOCOMPARE_NEWS}?categories=BTC,Trading&sortOrder=latest&limit=30`,
-      { next: { revalidate: 300 } } // Cache 5 minutes
+      { next: { revalidate: 60 }, signal: AbortSignal.timeout(5000) } // Cache 60s, 5s timeout
     );
 
     if (!res.ok) return [];

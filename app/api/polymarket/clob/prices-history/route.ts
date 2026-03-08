@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     if (endTime) params.set('end_time', endTime);
 
     const url = `${CLOB_BASE}/prices-history?${params.toString()}`;
-    const response = await fetch(url, { next: { revalidate: maxAge } });
+    const response = await fetch(url, { next: { revalidate: maxAge }, signal: AbortSignal.timeout(6000) });
 
     if (!response.ok) {
       return NextResponse.json(

@@ -38,10 +38,25 @@ export function usePolymarketData() {
     return merged;
   }, [midpoints, wsPrices]);
 
-  // Real-time sentiment recalculated on every WS tick
-  const sentimentScore = useMemo(() => {
-    if (markets.length === 0) return null;
-    return computeSentimentFromMarkets(markets, liveMidpoints);
+  // Debounced sentiment: recompute max every 500ms (not every WS tick)
+  const [sentimentScore, setSentimentScore] = useState<number | null>(null);
+  const sentimentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const liveMidpointsRef = useRef(liveMidpoints);
+  liveMidpointsRef.current = liveMidpoints;
+
+  useEffect(() => {
+    if (markets.length === 0) return;
+    if (sentimentTimerRef.current) return; // Already scheduled
+    sentimentTimerRef.current = setTimeout(() => {
+      sentimentTimerRef.current = null;
+      setSentimentScore(computeSentimentFromMarkets(markets, liveMidpointsRef.current));
+    }, 500);
+    return () => {
+      if (sentimentTimerRef.current) {
+        clearTimeout(sentimentTimerRef.current);
+        sentimentTimerRef.current = null;
+      }
+    };
   }, [markets, liveMidpoints]);
 
   // Fetch markets and initial midpoints via HTTP

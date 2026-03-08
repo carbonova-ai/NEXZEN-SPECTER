@@ -117,11 +117,22 @@ function computeConfidence(signals: SignalBreakdown, unavailableSignals: Set<str
   const nonZero = allSignals.filter(s => Math.abs(s) > 0.1);
   if (nonZero.length === 0) return 'LOW';
 
-  const direction = nonZero.reduce((sum, s) => sum + Math.sign(s), 0);
-  const agreement = Math.abs(direction) / nonZero.length;
+  // Magnitude-weighted agreement: strong signals count more than weak ones
+  const totalMagnitude = nonZero.reduce((sum, s) => sum + Math.abs(s), 0);
+  const weightedDirection = nonZero.reduce((sum, s) => sum + s, 0);
+  const agreement = totalMagnitude > 0 ? Math.abs(weightedDirection) / totalMagnitude : 0;
 
-  if (agreement >= 0.7 && nonZero.length >= 4) return 'HIGH';
-  if (agreement >= 0.5 && nonZero.length >= 3) return 'MED';
+  // Signal conflict penalty: when signals strongly disagree, reduce confidence
+  const variance = nonZero.reduce((sum, s) => {
+    const mean = weightedDirection / nonZero.length;
+    return sum + (s - mean) ** 2;
+  }, 0) / nonZero.length;
+  const conflictPenalty = Math.min(0.3, variance * 0.5);
+
+  const effectiveAgreement = Math.max(0, agreement - conflictPenalty);
+
+  if (effectiveAgreement >= 0.65 && nonZero.length >= 4) return 'HIGH';
+  if (effectiveAgreement >= 0.45 && nonZero.length >= 3) return 'MED';
   return 'LOW';
 }
 
@@ -226,7 +237,7 @@ export function generatePrediction(
   const confidence = computeConfidence(signals, unavailable);
   const reasoning = buildReasoning(signals, indicators);
 
-  const movePercent = aggregateScore * 0.002;
+  const movePercent = aggregateScore * 0.005; // 0.5% base move — crypto needs to overcome spread costs
   const targetPrice = currentPrice * (1 + movePercent);
 
   return {

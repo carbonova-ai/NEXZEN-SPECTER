@@ -214,18 +214,18 @@ export interface EngineConfig {
 
 export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
   weights: {
-    rsi: 0.10,
-    macd: 0.10,
-    sma: 0.08,
-    bollinger: 0.08,
-    volume: 0.05,
-    polymarket: 0.12,
-    chainlinkDelta: 0.17,
-    orderBook: 0.10,
-    fundingRate: 0.05,
-    onChain: 0.05,
-    newsSentiment: 0.05,
-    mlEnsemble: 0.05,
+    rsi: 0.08,
+    macd: 0.09,
+    sma: 0.07,
+    bollinger: 0.07,
+    volume: 0.06,
+    polymarket: 0.07,        // Reduced — circular (predicting market with market price)
+    chainlinkDelta: 0.13,    // Core edge — oracle lag detection
+    orderBook: 0.12,         // Boosted — high-quality real-time CLOB depth
+    fundingRate: 0.07,       // Contrarian indicator
+    onChain: 0.07,           // Whale flow detection
+    newsSentiment: 0.07,     // Breaking news moves crypto fast
+    mlEnsemble: 0.10,        // Meta-learner — grows with data
   },
   predictionCycleMs: 300_000,
   minConfidence: 0.55,

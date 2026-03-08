@@ -15,10 +15,10 @@ export async function GET(request: Request) {
     // Fetch latest funding rate from Binance Futures
     const [fundingRes, markRes] = await Promise.all([
       fetch(`https://fapi.binance.com/fapi/v1/fundingRate?symbol=${symbol}&limit=1`, {
-        next: { revalidate: 30 }, // Cache 30s
+        next: { revalidate: 30 }, signal: AbortSignal.timeout(5000),
       }),
       fetch(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${symbol}`, {
-        next: { revalidate: 10 },
+        next: { revalidate: 10 }, signal: AbortSignal.timeout(5000),
       }),
     ]);
 

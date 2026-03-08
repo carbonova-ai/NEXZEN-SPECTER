@@ -66,7 +66,7 @@ function scoreHeadline(title: string): { score: number; magnitude: number } {
   }
 
   const score = bullishScore - bearishScore;
-  const magnitude = bullishScore + bearishScore;
+  const magnitude = Math.abs(bullishScore - bearishScore); // Net strength, not ambiguity
   return { score, magnitude };
 }
 
@@ -101,7 +101,7 @@ export function analyzeNewsSentiment(articles: NewsArticle[]): NewsSentimentAnal
 
     // Recency weight: exponential decay over 24 hours
     const ageHours = (now - article.publishedAt) / (1000 * 60 * 60);
-    const recencyWeight = Math.exp(-ageHours / 12); // Half-life of 12 hours
+    const recencyWeight = Math.exp(-ageHours / 3); // Half-life of 3 hours — crypto prices in breaking news fast
 
     // BTC-specific boost
     const isBTC = article.title.toLowerCase().includes('bitcoin') ||

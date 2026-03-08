@@ -28,7 +28,7 @@ export function useDeltaEngine(
     if (binancePrice <= 0 || chainlinkPrice.price <= 0) return;
 
     const now = Date.now();
-    if (now - lastAnalysisRef.current < 1000) return;
+    if (now - lastAnalysisRef.current < 200) return; // 200ms throttle — catch fast oracle divergences
     lastAnalysisRef.current = now;
 
     const engine = engineRef.current;

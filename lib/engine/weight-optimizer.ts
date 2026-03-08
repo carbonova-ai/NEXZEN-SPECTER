@@ -23,9 +23,9 @@ import { PredictionResult, EngineConfig, DEFAULT_ENGINE_CONFIG } from '@/lib/typ
 
 // ── Configuration ──
 
-const MIN_SAMPLES = 20;         // Need at least 20 resolved predictions
-const MAX_SAMPLES = 200;        // Use last 200 predictions for optimization
-const DECAY_FACTOR = 0.97;      // Exponential decay per prediction (recent = more weight)
+const MIN_SAMPLES = 50;         // Need at least 50 resolved predictions (20 was noise)
+const MAX_SAMPLES = 300;        // Use last 300 predictions for optimization
+const DECAY_FACTOR = 0.99;      // Gentler decay — crypto regimes last days, not hours
 const LEARNING_RATE = 0.3;      // How fast to adapt (0 = static, 1 = fully adaptive)
 const MIN_WEIGHT = 0.03;        // Minimum 3% weight per signal
 const MAX_WEIGHT = 0.35;        // Maximum 35% weight per signal

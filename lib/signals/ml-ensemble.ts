@@ -15,15 +15,16 @@
 
 import type { PredictionResult, SignalBreakdown } from '@/lib/types';
 
-const LEARNING_RATE = 0.01;
-const L2_REGULARIZATION = 0.001;
-const MIN_TRAINING_SAMPLES = 15;
+const LEARNING_RATE = 0.002;           // Reduced — prevents weight oscillation with small batches
+const L2_REGULARIZATION = 0.003;       // Stronger regularization to prevent overfitting
+const MIN_TRAINING_SAMPLES = 50;       // Need 50+ samples for reliable signal (15 was noise)
 const STORAGE_KEY = 'nexzen_ml_weights';
 
 // Feature names (signals + cross-interactions)
 const BASE_FEATURES = [
   'rsiSignal', 'macdSignal', 'smaSignal', 'bollingerSignal',
   'volumeSignal', 'polymarketSignal', 'chainlinkDeltaSignal',
+  'orderBookSignal', 'fundingRateSignal', 'onChainSignal', 'newsSentimentSignal',
 ] as const;
 
 // Cross-interaction features (most informative pairs)
@@ -32,6 +33,9 @@ const CROSS_FEATURES = [
   ['macdSignal', 'smaSignal'],         // MACD + SMA = trend strength
   ['polymarketSignal', 'chainlinkDeltaSignal'], // External signals
   ['bollingerSignal', 'rsiSignal'],    // Mean-reversion combo
+  ['orderBookSignal', 'fundingRateSignal'],     // Exchange flow + derivatives sentiment
+  ['onChainSignal', 'newsSentimentSignal'],      // On-chain moves + news catalyst
+  ['chainlinkDeltaSignal', 'orderBookSignal'],   // Oracle edge + CLOB depth
 ] as const;
 
 const TOTAL_FEATURES = BASE_FEATURES.length + CROSS_FEATURES.length + 1; // +1 for bias
@@ -47,7 +51,7 @@ export interface MLEnsembleState {
  * Sigmoid activation function.
  */
 function sigmoid(x: number): number {
-  return 1 / (1 + Math.exp(-Math.max(-500, Math.min(500, x))));
+  return 1 / (1 + Math.exp(-Math.max(-50, Math.min(50, x))));
 }
 
 /**

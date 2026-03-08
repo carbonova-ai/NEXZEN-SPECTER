@@ -12,7 +12,7 @@ import {
 } from '@/lib/websocket/binance';
 
 const MAX_CANDLES = 200;
-const TICKER_THROTTLE_MS = 250; // Max 4 ticker renders/sec
+const TICKER_THROTTLE_MS = 100; // Max 10 ticker renders/sec — speed-critical for delta detection
 const CROSS_VALIDATION_TOLERANCE = 0.005; // 0.5% max divergence between aggTrade and ticker
 
 export function useBinanceStream() {

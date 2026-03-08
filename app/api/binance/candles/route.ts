@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const url = `${BINANCE_API}?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&limit=${encodeURIComponent(limit)}`;
-    const response = await fetch(url, { next: { revalidate: 10 } });
+    const response = await fetch(url, { next: { revalidate: 10 }, signal: AbortSignal.timeout(5000) });
 
     if (!response.ok) {
       return NextResponse.json(

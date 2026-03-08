@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const url = `${GAMMA_BASE}/markets?${params.toString()}`;
-    const response = await fetch(url, { next: { revalidate: 30 } });
+    const response = await fetch(url, { next: { revalidate: 30 }, signal: AbortSignal.timeout(5000) });
 
     if (!response.ok) {
       return NextResponse.json(

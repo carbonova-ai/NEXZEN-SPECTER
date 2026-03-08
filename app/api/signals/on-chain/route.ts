@@ -28,7 +28,7 @@ async function fetchLargeTransactions(): Promise<WhaleTransaction[]> {
   try {
     // Fetch unconfirmed transactions (mempool)
     const res = await fetch(`${BLOCKCHAIN_API}/unconfirmed-transactions?format=json&limit=50`, {
-      next: { revalidate: 60 }, // Cache 1 minute
+      next: { revalidate: 30 }, signal: AbortSignal.timeout(5000), // Cache 30s, 5s timeout
     });
 
     if (!res.ok) return [];
