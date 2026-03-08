@@ -57,6 +57,16 @@ export function usePredictionEngine(
   const lastSpikeRef = useRef<number>(0);
   const lastPriceRef = useRef<number | null>(null);
 
+  // Stable refs for values that change frequently — avoids recreating runCycle
+  const candlesRef = useRef(candles);
+  const currentPriceRef = useRef(currentPrice);
+  const sentimentRef = useRef(polymarketSentiment);
+  const edgeSignalRef = useRef(chainlinkEdgeSignal);
+  candlesRef.current = candles;
+  currentPriceRef.current = currentPrice;
+  sentimentRef.current = polymarketSentiment;
+  edgeSignalRef.current = chainlinkEdgeSignal;
+
   // Load history from Supabase on mount
   useEffect(() => {
     if (supabaseLoadedRef.current) return;
@@ -112,17 +122,19 @@ export function usePredictionEngine(
   }, []);
 
   const runCycle = useCallback((isSpike = false) => {
-    if (!currentPrice || candles.length < 50) return;
+    const price = currentPriceRef.current;
+    const cndls = candlesRef.current;
+    if (!price || cndls.length < 50) return;
 
     setIsCalculating(true);
 
     // Evaluate previous prediction
-    resolvePrevious(currentPrice);
+    resolvePrevious(price);
 
     // Generate new prediction with Chainlink oracle edge
     const prediction = generatePrediction(
-      candles, currentPrice, polymarketSentiment,
-      chainlinkEdgeSignal, chainlinkPrice
+      cndls, price, sentimentRef.current,
+      edgeSignalRef.current, chainlinkPriceRef.current
     );
     currentPredictionRef.current = prediction;
     setCurrentPrediction(prediction);
@@ -138,7 +150,7 @@ export function usePredictionEngine(
     }
 
     setIsCalculating(false);
-  }, [candles, currentPrice, polymarketSentiment, chainlinkEdgeSignal, chainlinkPrice, resolvePrevious]);
+  }, [resolvePrevious]);
 
   // Detect price spikes for micro-cycle triggers
   useEffect(() => {
@@ -162,12 +174,18 @@ export function usePredictionEngine(
     }
   }, [currentPrice, runCycle]);
 
-  // Regular prediction cycle
+  // Initial prediction — run once when we have enough data
+  const initialRanRef = useRef(false);
   useEffect(() => {
+    if (initialRanRef.current) return;
     if (candles.length >= 50 && currentPrice && !currentPredictionRef.current) {
+      initialRanRef.current = true;
       runCycle();
     }
+  }, [candles.length, currentPrice, runCycle]);
 
+  // Regular 5-minute prediction cycle — stable interval that never resets
+  useEffect(() => {
     const interval = setInterval(() => runCycle(), CYCLE_MS);
     return () => clearInterval(interval);
   }, [runCycle]);

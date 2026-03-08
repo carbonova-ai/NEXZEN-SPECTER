@@ -17,6 +17,7 @@ export function PriceCard({ ticker }: PriceCardProps) {
     if (prev !== null && prev !== ticker.price) {
       setFlashClass(ticker.price > prev ? 'animate-flash-green' : 'animate-flash-red');
       const timeout = setTimeout(() => setFlashClass(''), 300);
+      prevPriceRef.current = ticker.price;
       return () => clearTimeout(timeout);
     }
     prevPriceRef.current = ticker.price;

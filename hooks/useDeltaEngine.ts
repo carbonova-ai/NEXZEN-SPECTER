@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { DeltaEngine } from '@/lib/chainlink/delta-engine';
+import { saveDeltaSnapshot } from '@/lib/supabase/chainlink';
 import type { ChainlinkPrice, DeltaAnalysis } from '@/lib/chainlink/types';
 
 interface UseDeltaEngineReturn {
@@ -37,6 +38,11 @@ export function useDeltaEngine(
     setDelta(analysis);
     setEdgeSignal(analysis.edgeSignal);
     setSnapshotCount(engine.getSnapshotCount());
+
+    // Persist delta with actual edge signal (every 10th snapshot to avoid spam)
+    if (analysis.currentDelta && engine.getSnapshotCount() % 10 === 0) {
+      saveDeltaSnapshot(analysis.currentDelta, analysis.edgeSignal).catch(() => {});
+    }
   }, [binancePrice, chainlinkPrice]);
 
   return { delta, edgeSignal, snapshotCount };
