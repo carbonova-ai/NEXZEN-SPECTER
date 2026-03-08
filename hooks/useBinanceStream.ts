@@ -3,22 +3,77 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { TickerData, CandleData, ConnectionStatus } from '@/lib/types';
 import {
-  createBinanceStream,
+  createBinanceCombinedStream,
   parseTicker,
   parseKline,
   BinanceTickerMessage,
   BinanceKlineMessage,
+  BinanceAggTradeMessage,
 } from '@/lib/websocket/binance';
 
 const MAX_CANDLES = 200;
+const TICKER_THROTTLE_MS = 250; // Max 4 ticker renders/sec
+const CROSS_VALIDATION_TOLERANCE = 0.005; // 0.5% max divergence between aggTrade and ticker
 
 export function useBinanceStream() {
   const [ticker, setTicker] = useState<TickerData | null>(null);
   const [candles, setCandles] = useState<CandleData[]>([]);
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const [latency, setLatency] = useState<number>(0);
+  const [tradePrice, setTradePrice] = useState<number | null>(null);
+  const [priceIntegrity, setPriceIntegrity] = useState<'verified' | 'unverified' | 'divergent'>('unverified');
+
   const candlesRef = useRef<CandleData[]>([]);
   const initializedRef = useRef(false);
+
+  // RAF-batch refs: accumulate data, flush at screen refresh rate
+  const tradePriceRef = useRef<number | null>(null);
+  const latencyRef = useRef<number>(0);
+  const tickerRef = useRef<TickerData | null>(null);
+  const rafIdRef = useRef<number>(0);
+  const dirtyRef = useRef(false);
+  const lastTickerRenderRef = useRef<number>(0);
+  const integrityRef = useRef<'verified' | 'unverified' | 'divergent'>('unverified');
+
+  // RAF flush: sync refs → state at 60fps max
+  useEffect(() => {
+    function flush() {
+      if (dirtyRef.current) {
+        dirtyRef.current = false;
+
+        // Always flush trade price (highest priority, lowest latency)
+        if (tradePriceRef.current !== null) {
+          setTradePrice(tradePriceRef.current);
+        }
+
+        // Throttle ticker renders
+        const now = performance.now();
+        if (tickerRef.current && now - lastTickerRenderRef.current > TICKER_THROTTLE_MS) {
+          setTicker(tickerRef.current);
+          lastTickerRenderRef.current = now;
+        }
+
+        // Latency
+        setLatency(latencyRef.current);
+
+        // Cross-validate aggTrade vs ticker (detect feed divergence)
+        const tp = tradePriceRef.current;
+        const tk = tickerRef.current?.price;
+        if (tp && tk) {
+          const divergence = Math.abs(tp - tk) / tk;
+          const newIntegrity = divergence > CROSS_VALIDATION_TOLERANCE ? 'divergent' : 'verified';
+          if (newIntegrity !== integrityRef.current) {
+            integrityRef.current = newIntegrity;
+            setPriceIntegrity(newIntegrity);
+          }
+        }
+      }
+      rafIdRef.current = requestAnimationFrame(flush);
+    }
+
+    rafIdRef.current = requestAnimationFrame(flush);
+    return () => cancelAnimationFrame(rafIdRef.current);
+  }, []);
 
   // Fetch historical candles on mount
   useEffect(() => {
@@ -41,21 +96,17 @@ export function useBinanceStream() {
     fetchHistory();
   }, []);
 
-  // Handle kline updates
-  const handleKline = useCallback((data: unknown) => {
-    const klineMsg = data as BinanceKlineMessage;
-    if (!klineMsg.k) return;
+  // Handle kline updates (low frequency ~every few seconds, no throttle needed)
+  const handleKline = useCallback((data: BinanceKlineMessage) => {
+    if (!data.k) return;
 
-    const parsed = parseKline(klineMsg);
-    const now = Date.now();
-    setLatency(now - klineMsg.E);
+    const parsed = parseKline(data);
 
     setCandles(prev => {
       const updated = [...prev];
       const lastIndex = updated.length - 1;
 
       if (lastIndex >= 0 && updated[lastIndex].timestamp === parsed.timestamp) {
-        // Update current candle
         updated[lastIndex] = {
           open: parsed.open,
           high: parsed.high,
@@ -65,7 +116,6 @@ export function useBinanceStream() {
           timestamp: parsed.timestamp,
         };
       } else if (parsed.isClosed || lastIndex < 0 || parsed.timestamp > updated[lastIndex].timestamp) {
-        // New candle
         updated.push({
           open: parsed.open,
           high: parsed.high,
@@ -76,7 +126,6 @@ export function useBinanceStream() {
         });
       }
 
-      // Keep max candles
       if (updated.length > MAX_CANDLES) {
         updated.splice(0, updated.length - MAX_CANDLES);
       }
@@ -86,26 +135,41 @@ export function useBinanceStream() {
     });
   }, []);
 
-  // Handle ticker updates
-  const handleTicker = useCallback((data: unknown) => {
-    const tickerMsg = data as BinanceTickerMessage;
-    if (!tickerMsg.c) return;
-    setTicker(parseTicker(tickerMsg));
+  // Handle ticker — write to ref, RAF flushes to state
+  const handleTicker = useCallback((data: BinanceTickerMessage) => {
+    if (!data.c) return;
+    tickerRef.current = parseTicker(data);
+    dirtyRef.current = true;
   }, []);
 
-  // Connect WebSocket streams
-  useEffect(() => {
-    const tickerStream = createBinanceStream('ticker', handleTicker, setStatus);
-    const klineStream = createBinanceStream('kline', handleKline, () => {});
+  // Handle aggTrade — write to ref, RAF flushes to state (zero-copy path)
+  const handleTrade = useCallback((data: BinanceAggTradeMessage) => {
+    tradePriceRef.current = parseFloat(data.p);
+    dirtyRef.current = true;
+  }, []);
 
-    tickerStream.connect();
-    klineStream.connect();
+  // Handle latency — write to ref only
+  const handleLatency = useCallback((ms: number) => {
+    latencyRef.current = ms;
+    dirtyRef.current = true;
+  }, []);
+
+  // Single combined WebSocket connection
+  useEffect(() => {
+    const stream = createBinanceCombinedStream({
+      onTicker: handleTicker,
+      onKline: handleKline,
+      onTrade: handleTrade,
+      onStatusChange: setStatus,
+      onLatency: handleLatency,
+    });
+
+    stream.connect();
 
     return () => {
-      tickerStream.disconnect();
-      klineStream.disconnect();
+      stream.disconnect();
     };
-  }, [handleTicker, handleKline]);
+  }, [handleTicker, handleKline, handleTrade, handleLatency]);
 
-  return { ticker, candles, status, latency };
+  return { ticker, candles, status, latency, tradePrice, priceIntegrity };
 }

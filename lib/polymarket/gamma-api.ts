@@ -3,8 +3,8 @@ import { PolymarketEvent, PolymarketMarket } from './types';
 const PROXY_BASE = '/api/polymarket/gamma';
 
 const BTC_KEYWORDS = ['bitcoin', 'btc', 'satoshi'];
-const BULLISH_KEYWORDS = ['above', 'over', 'higher', 'ath', 'all-time high', 'reach', 'hit', 'exceed', 'surpass', 'break'];
-const BEARISH_KEYWORDS = ['below', 'under', 'lower', 'crash', 'drop', 'fall', 'decline', 'dip'];
+const BULLISH_KEYWORDS = ['above', 'over', 'higher', 'ath', 'all-time high', 'reach', 'hit', 'exceed', 'surpass', 'break', 'up or down', 'go up'];
+const BEARISH_KEYWORDS = ['below', 'under', 'lower', 'crash', 'drop', 'fall', 'decline', 'dip', 'go down'];
 
 export async function fetchCryptoEvents(): Promise<PolymarketEvent[]> {
   const params = new URLSearchParams({

@@ -1,9 +1,7 @@
 'use client';
 
-import { useMemo } from 'react';
 import { useBinanceStream } from '@/hooks/useBinanceStream';
 import { usePolymarketData } from '@/hooks/usePolymarketData';
-import { usePolymarketStream } from '@/hooks/usePolymarketStream';
 import { usePredictionEngine } from '@/hooks/usePredictionEngine';
 
 import { StatusBar } from '@/components/dashboard/StatusBar';
@@ -16,32 +14,30 @@ import { PolymarketPanel } from '@/components/dashboard/PolymarketPanel';
 import { FooterBar } from '@/components/dashboard/FooterBar';
 
 export default function Dashboard() {
-  // 1. Binance real-time data
-  const { ticker, candles, status: binanceStatus, latency } = useBinanceStream();
+  // 1. Binance combined stream (ticker + kline + aggTrade in single WS)
+  const { ticker, candles, status: binanceStatus, latency, tradePrice, priceIntegrity } = useBinanceStream();
 
-  // 2. Polymarket market data
+  // 2. Polymarket data with embedded WebSocket (real-time sentiment)
   const {
     markets,
     sentimentScore,
     midpoints,
     isLoading: polyLoading,
     error: polyError,
+    wsStatus: polyWsStatus,
   } = usePolymarketData();
 
-  // 3. Polymarket WebSocket for real-time updates
-  const polymarketIds = useMemo(
-    () => markets.flatMap(m => m.clobTokenIds || []).filter(Boolean).slice(0, 10),
-    [markets]
-  );
-  const { status: polyWsStatus } = usePolymarketStream(polymarketIds);
-
-  // 4. Prediction engine
+  // 3. Prediction engine with spike detection (uses tick-by-tick trade price)
   const {
     currentPrediction,
     history,
     performance,
     nextPredictionIn,
-  } = usePredictionEngine(candles, ticker?.price ?? null, sentimentScore);
+  } = usePredictionEngine(
+    candles,
+    tradePrice ?? ticker?.price ?? null,
+    sentimentScore
+  );
 
   // Derive polymarket connection status
   const polyStatus = polyError ? 'error' as const : polyLoading ? 'connecting' as const : polyWsStatus;
@@ -88,6 +84,7 @@ export default function Dashboard() {
         latency={latency}
         totalCycles={performance.totalPredictions}
         polymarketOnline={!polyError}
+        priceIntegrity={priceIntegrity}
       />
     </div>
   );

@@ -76,19 +76,18 @@ export function computeSentimentFromMarkets(
     const direction = parseMarketDirection(market.question);
     if (direction === 'neutral') continue;
 
-    // Get the "Yes" price (first outcome is typically "Yes")
+    // Get the "Yes" price — try midpoint first, fallback to outcomePrices from Gamma API
     const tokenId = market.clobTokenIds?.[0];
-    const yesPrice = tokenId
-      ? midpoints.get(tokenId)
-      : market.outcomePrices?.[0]
-        ? parseFloat(market.outcomePrices[0])
-        : null;
+    const midpointPrice = tokenId ? midpoints.get(tokenId) : undefined;
+    const rawFallback = market.outcomePrices?.[0] ? parseFloat(market.outcomePrices[0]) : NaN;
+    const fallbackPrice = Number.isFinite(rawFallback) ? rawFallback : null;
+    const yesPrice = midpointPrice ?? fallbackPrice;
 
-    if (yesPrice === null || yesPrice === undefined) continue;
+    if (yesPrice === null || yesPrice === undefined || !Number.isFinite(yesPrice)) continue;
 
     // Weight by volume and sqrt of liquidity
-    const volume = market.volume || 1;
-    const liquidity = market.liquidity || 1;
+    const volume = Number.isFinite(market.volume) && market.volume > 0 ? market.volume : 1;
+    const liquidity = Number.isFinite(market.liquidity) && market.liquidity > 0 ? market.liquidity : 1;
     const weight = volume * Math.sqrt(liquidity);
 
     // Convert yes price to sentiment:
@@ -105,6 +104,7 @@ export function computeSentimentFromMarkets(
     totalWeight += weight;
   }
 
-  if (totalWeight === 0) return 0;
-  return Math.max(-1, Math.min(1, weightedSum / totalWeight));
+  if (totalWeight === 0 || !Number.isFinite(totalWeight)) return 0;
+  const result = weightedSum / totalWeight;
+  return Number.isFinite(result) ? Math.max(-1, Math.min(1, result)) : 0;
 }

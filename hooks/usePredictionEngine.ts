@@ -12,6 +12,8 @@ import {
 } from '@/lib/supabase/predictions';
 
 const CYCLE_MS = 300_000; // 5 minutes
+const SPIKE_THRESHOLD = 0.003; // 0.3% price move triggers micro-update
+const SPIKE_COOLDOWN_MS = 30_000; // Min 30s between spike-triggered updates
 const STORAGE_KEY = 'nexzen_prediction_history';
 const MAX_HISTORY = 200;
 
@@ -31,7 +33,6 @@ function saveHistory(history: PredictionResult[]) {
     const trimmed = history.slice(-MAX_HISTORY);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
   } catch {
-    // Storage full, clear old data
     localStorage.removeItem(STORAGE_KEY);
   }
 }
@@ -47,11 +48,14 @@ export function usePredictionEngine(
   const supabaseLoadedRef = useRef(false);
   const [nextPredictionIn, setNextPredictionIn] = useState<number>(CYCLE_MS / 1000);
   const [isCalculating, setIsCalculating] = useState(false);
+  const [spikeDetected, setSpikeDetected] = useState(false);
 
   const currentPredictionRef = useRef<Prediction | null>(null);
   const cycleStartRef = useRef<number>(Date.now());
+  const lastSpikeRef = useRef<number>(0);
+  const lastPriceRef = useRef<number | null>(null);
 
-  // Load history from Supabase on mount (merge with localStorage)
+  // Load history from Supabase on mount
   useEffect(() => {
     if (supabaseLoadedRef.current) return;
     supabaseLoadedRef.current = true;
@@ -67,44 +71,46 @@ export function usePredictionEngine(
         setPerformance(calculatePerformance(trimmed));
         return trimmed;
       });
-    }).catch(() => { /* Supabase offline, use localStorage */ });
+    }).catch(() => {});
   }, []);
 
-  const runCycle = useCallback(() => {
+  const resolvePrevious = useCallback((price: number) => {
+    const prevPrediction = currentPredictionRef.current;
+    if (!prevPrediction) return;
+
+    const result = evaluatePrediction(
+      { ...prevPrediction, outcome: 'PENDING', exitPrice: null, pnlPercent: null },
+      price
+    );
+
+    resolvePrediction(
+      result.id,
+      price,
+      result.outcome as 'WIN' | 'LOSS',
+      result.pnlPercent ?? 0
+    ).catch(() => {});
+
+    setHistory(prev => {
+      const updated = [...prev, result];
+      saveHistory(updated);
+      const newPerformance = calculatePerformance(updated);
+      setPerformance(newPerformance);
+
+      if (updated.length % 10 === 0) {
+        savePerformanceSnapshot(newPerformance).catch(() => {});
+      }
+
+      return updated;
+    });
+  }, []);
+
+  const runCycle = useCallback((isSpike = false) => {
     if (!currentPrice || candles.length < 50) return;
 
     setIsCalculating(true);
 
-    // Evaluate previous prediction if exists
-    const prevPrediction = currentPredictionRef.current;
-    if (prevPrediction) {
-      const result = evaluatePrediction(
-        { ...prevPrediction, outcome: 'PENDING', exitPrice: null, pnlPercent: null },
-        currentPrice
-      );
-
-      // Persist resolution to Supabase
-      resolvePrediction(
-        result.id,
-        currentPrice,
-        result.outcome as 'WIN' | 'LOSS',
-        result.pnlPercent ?? 0
-      ).catch(() => {});
-
-      setHistory(prev => {
-        const updated = [...prev, result];
-        saveHistory(updated);
-        const newPerformance = calculatePerformance(updated);
-        setPerformance(newPerformance);
-
-        // Snapshot performance to Supabase every 10 cycles
-        if (updated.length % 10 === 0) {
-          savePerformanceSnapshot(newPerformance).catch(() => {});
-        }
-
-        return updated;
-      });
-    }
+    // Evaluate previous prediction
+    resolvePrevious(currentPrice);
 
     // Generate new prediction
     const prediction = generatePrediction(candles, currentPrice, polymarketSentiment);
@@ -112,22 +118,47 @@ export function usePredictionEngine(
     setCurrentPrediction(prediction);
     cycleStartRef.current = Date.now();
 
-    // Persist new prediction to Supabase
     if (prediction) {
       savePrediction(prediction).catch(() => {});
     }
 
-    setIsCalculating(false);
-  }, [candles, currentPrice, polymarketSentiment]);
+    if (isSpike) {
+      setSpikeDetected(true);
+      setTimeout(() => setSpikeDetected(false), 3000);
+    }
 
-  // Run prediction cycle
+    setIsCalculating(false);
+  }, [candles, currentPrice, polymarketSentiment, resolvePrevious]);
+
+  // Detect price spikes for micro-cycle triggers
   useEffect(() => {
-    // Initial prediction after data is ready
+    if (!currentPrice) return;
+
+    const prev = lastPriceRef.current;
+    lastPriceRef.current = currentPrice;
+
+    if (prev === null) return;
+
+    const change = Math.abs(currentPrice - prev) / prev;
+    const now = Date.now();
+
+    if (
+      change >= SPIKE_THRESHOLD &&
+      now - lastSpikeRef.current > SPIKE_COOLDOWN_MS &&
+      currentPredictionRef.current // Only if we have an active prediction
+    ) {
+      lastSpikeRef.current = now;
+      runCycle(true);
+    }
+  }, [currentPrice, runCycle]);
+
+  // Regular prediction cycle
+  useEffect(() => {
     if (candles.length >= 50 && currentPrice && !currentPredictionRef.current) {
       runCycle();
     }
 
-    const interval = setInterval(runCycle, CYCLE_MS);
+    const interval = setInterval(() => runCycle(), CYCLE_MS);
     return () => clearInterval(interval);
   }, [runCycle]);
 
@@ -148,5 +179,6 @@ export function usePredictionEngine(
     performance,
     nextPredictionIn,
     isCalculating,
+    spikeDetected,
   };
 }

@@ -136,10 +136,14 @@ export function generatePrediction(
   if (candles.length < 50) return null;
 
   const indicators = computeAllIndicators(candles);
-  const hasPolymarket = polymarketSentiment !== null;
+  const safeSentiment = polymarketSentiment !== null && Number.isFinite(polymarketSentiment)
+    ? polymarketSentiment
+    : null;
+  const hasPolymarket = safeSentiment !== null;
 
-  const signals = computeSignals(candles, indicators, polymarketSentiment);
-  const aggregateScore = computeWeightedScore(signals, config, hasPolymarket);
+  const signals = computeSignals(candles, indicators, safeSentiment);
+  const rawScore = computeWeightedScore(signals, config, hasPolymarket);
+  const aggregateScore = Number.isFinite(rawScore) ? rawScore : 0;
   signals.aggregateScore = aggregateScore;
 
   const direction = aggregateScore >= 0 ? 'UP' : 'DOWN';

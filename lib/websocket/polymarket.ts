@@ -81,7 +81,7 @@ export function createPolymarketStream(
 
   function scheduleReconnect() {
     reconnectAttempts++;
-    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30_000);
+    const delay = Math.min(500 * Math.pow(1.5, reconnectAttempts), 15_000);
     reconnectTimeout = setTimeout(connect, delay);
   }
 
