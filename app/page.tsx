@@ -2,6 +2,8 @@
 
 import { useBinanceStream } from '@/hooks/useBinanceStream';
 import { usePolymarketData } from '@/hooks/usePolymarketData';
+import { useChainlinkPrice } from '@/hooks/useChainlinkPrice';
+import { useDeltaEngine } from '@/hooks/useDeltaEngine';
 import { usePredictionEngine } from '@/hooks/usePredictionEngine';
 
 import { StatusBar } from '@/components/dashboard/StatusBar';
@@ -27,7 +29,16 @@ export default function Dashboard() {
     wsStatus: polyWsStatus,
   } = usePolymarketData();
 
-  // 3. Prediction engine with spike detection (uses tick-by-tick trade price)
+  // 3. Chainlink oracle price feed (Arbitrum L2, polls every 3s)
+  const { price: chainlinkPrice, status: chainlinkStatus } = useChainlinkPrice();
+
+  // 4. Delta engine: Binance vs Chainlink divergence analysis
+  const { delta, edgeSignal } = useDeltaEngine(
+    tradePrice ?? ticker?.price ?? null,
+    chainlinkPrice
+  );
+
+  // 5. Prediction engine with spike detection + Chainlink oracle edge
   const {
     currentPrediction,
     history,
@@ -36,7 +47,9 @@ export default function Dashboard() {
   } = usePredictionEngine(
     candles,
     tradePrice ?? ticker?.price ?? null,
-    sentimentScore
+    sentimentScore,
+    edgeSignal,
+    chainlinkPrice?.price ?? null
   );
 
   // Derive polymarket connection status
@@ -48,6 +61,7 @@ export default function Dashboard() {
       <StatusBar
         binanceStatus={binanceStatus}
         polymarketStatus={polyStatus}
+        chainlinkStatus={chainlinkStatus}
         polymarketError={polyError}
       />
 
@@ -85,6 +99,8 @@ export default function Dashboard() {
         totalCycles={performance.totalPredictions}
         polymarketOnline={!polyError}
         priceIntegrity={priceIntegrity}
+        chainlinkDelta={delta?.currentDelta?.deltaPercent ?? null}
+        chainlinkOnline={chainlinkStatus === 'connected'}
       />
     </div>
   );

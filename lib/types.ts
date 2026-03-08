@@ -63,6 +63,7 @@ export interface SignalBreakdown {
   bollingerSignal: number;
   volumeSignal: number;
   polymarketSignal: number;
+  chainlinkDeltaSignal: number;
   aggregateScore: number;
 }
 
@@ -77,6 +78,9 @@ export interface Prediction {
   expiresAt: number;
   indicators: IndicatorValues;
   polymarketSentiment: number | null;
+  chainlinkPrice: number | null;
+  chainlinkDelta: number | null;
+  resolutionSource: 'chainlink' | 'binance';
   signals: SignalBreakdown;
   reasoning: string[];
 }
@@ -122,6 +126,7 @@ export interface EngineConfig {
     bollinger: number;
     volume: number;
     polymarket: number;
+    chainlinkDelta: number;
   };
   predictionCycleMs: number;
   minConfidence: number;
@@ -129,12 +134,13 @@ export interface EngineConfig {
 
 export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
   weights: {
-    rsi: 0.20,
-    macd: 0.20,
-    sma: 0.15,
-    bollinger: 0.15,
-    volume: 0.10,
-    polymarket: 0.20,
+    rsi: 0.15,
+    macd: 0.15,
+    sma: 0.12,
+    bollinger: 0.12,
+    volume: 0.08,
+    polymarket: 0.15,
+    chainlinkDelta: 0.23,
   },
   predictionCycleMs: 300_000,
   minConfidence: 0.55,

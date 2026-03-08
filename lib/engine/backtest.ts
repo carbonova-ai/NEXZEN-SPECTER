@@ -62,17 +62,21 @@ export function calculatePerformance(results: PredictionResult[]): PerformanceSt
 
 export function evaluatePrediction(
   prediction: PredictionResult,
-  exitPrice: number
+  exitPrice: number,
+  chainlinkExitPrice?: number | null
 ): PredictionResult {
-  const pnlPercent = ((exitPrice - prediction.entryPrice) / prediction.entryPrice) * 100;
+  // Use Chainlink price for resolution when available — this is the Polymarket truth
+  const resolutionPrice = chainlinkExitPrice ?? exitPrice;
+
+  const pnlPercent = ((resolutionPrice - prediction.entryPrice) / prediction.entryPrice) * 100;
   const isCorrectDirection =
-    (prediction.direction === 'UP' && exitPrice > prediction.entryPrice) ||
-    (prediction.direction === 'DOWN' && exitPrice < prediction.entryPrice);
+    (prediction.direction === 'UP' && resolutionPrice > prediction.entryPrice) ||
+    (prediction.direction === 'DOWN' && resolutionPrice < prediction.entryPrice);
 
   return {
     ...prediction,
     outcome: isCorrectDirection ? 'WIN' : 'LOSS',
-    exitPrice,
+    exitPrice: resolutionPrice,
     pnlPercent: prediction.direction === 'UP' ? pnlPercent : -pnlPercent,
   };
 }

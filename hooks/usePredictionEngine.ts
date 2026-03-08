@@ -40,7 +40,9 @@ function saveHistory(history: PredictionResult[]) {
 export function usePredictionEngine(
   candles: CandleData[],
   currentPrice: number | null,
-  polymarketSentiment: number | null
+  polymarketSentiment: number | null,
+  chainlinkEdgeSignal: number | null = null,
+  chainlinkPrice: number | null = null
 ) {
   const [currentPrediction, setCurrentPrediction] = useState<Prediction | null>(null);
   const [history, setHistory] = useState<PredictionResult[]>(() => loadHistory());
@@ -74,13 +76,18 @@ export function usePredictionEngine(
     }).catch(() => {});
   }, []);
 
+  const chainlinkPriceRef = useRef<number | null>(null);
+  chainlinkPriceRef.current = chainlinkPrice;
+
   const resolvePrevious = useCallback((price: number) => {
     const prevPrediction = currentPredictionRef.current;
     if (!prevPrediction) return;
 
+    // Use Chainlink price for resolution — this is the Polymarket truth
     const result = evaluatePrediction(
       { ...prevPrediction, outcome: 'PENDING', exitPrice: null, pnlPercent: null },
-      price
+      price,
+      chainlinkPriceRef.current
     );
 
     resolvePrediction(
@@ -112,8 +119,11 @@ export function usePredictionEngine(
     // Evaluate previous prediction
     resolvePrevious(currentPrice);
 
-    // Generate new prediction
-    const prediction = generatePrediction(candles, currentPrice, polymarketSentiment);
+    // Generate new prediction with Chainlink oracle edge
+    const prediction = generatePrediction(
+      candles, currentPrice, polymarketSentiment,
+      chainlinkEdgeSignal, chainlinkPrice
+    );
     currentPredictionRef.current = prediction;
     setCurrentPrediction(prediction);
     cycleStartRef.current = Date.now();
@@ -128,7 +138,7 @@ export function usePredictionEngine(
     }
 
     setIsCalculating(false);
-  }, [candles, currentPrice, polymarketSentiment, resolvePrevious]);
+  }, [candles, currentPrice, polymarketSentiment, chainlinkEdgeSignal, chainlinkPrice, resolvePrevious]);
 
   // Detect price spikes for micro-cycle triggers
   useEffect(() => {

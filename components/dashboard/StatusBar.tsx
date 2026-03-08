@@ -6,6 +6,7 @@ import { ConnectionStatus } from '@/lib/types';
 interface StatusBarProps {
   binanceStatus: ConnectionStatus;
   polymarketStatus: ConnectionStatus;
+  chainlinkStatus: ConnectionStatus;
   polymarketError: string | null;
 }
 
@@ -25,7 +26,7 @@ function ConnectionDot({ status, label }: { status: ConnectionStatus; label: str
   );
 }
 
-export function StatusBar({ binanceStatus, polymarketStatus, polymarketError }: StatusBarProps) {
+export function StatusBar({ binanceStatus, polymarketStatus, chainlinkStatus, polymarketError }: StatusBarProps) {
   const [time, setTime] = useState('');
 
   useEffect(() => {
@@ -45,12 +46,13 @@ export function StatusBar({ binanceStatus, polymarketStatus, polymarketError }: 
         <h1 className="text-base font-bold tracking-wider glow-text text-nexzen-primary">
           N&Xi;X&Zeta;&Xi;N SP&Xi;CT&Xi;R
         </h1>
-        <span className="text-[10px] text-nexzen-muted ml-1">v0.1</span>
+        <span className="text-[10px] text-nexzen-muted ml-1">v0.2</span>
       </div>
 
       <div className="flex items-center gap-4">
         <ConnectionDot status={binanceStatus} label="BINANCE" />
         <ConnectionDot status={effectivePolyStatus} label="POLYMARKET" />
+        <ConnectionDot status={chainlinkStatus} label="CHAINLINK" />
       </div>
 
       <div className="flex items-center gap-3">

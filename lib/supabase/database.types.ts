@@ -13,6 +13,9 @@ export interface Database {
           outcome: string;
           pnl_percent: number | null;
           polymarket_sentiment: number | null;
+          chainlink_price: number | null;
+          chainlink_delta: number | null;
+          resolution_source: string;
           signals: Record<string, number>;
           reasoning: string[];
           indicators: Record<string, unknown>;
@@ -31,6 +34,9 @@ export interface Database {
           outcome?: string;
           pnl_percent?: number | null;
           polymarket_sentiment?: number | null;
+          chainlink_price?: number | null;
+          chainlink_delta?: number | null;
+          resolution_source?: string;
           signals?: Record<string, number>;
           reasoning?: string[];
           indicators?: Record<string, unknown>;
@@ -49,6 +55,9 @@ export interface Database {
           outcome?: string;
           pnl_percent?: number | null;
           polymarket_sentiment?: number | null;
+          chainlink_price?: number | null;
+          chainlink_delta?: number | null;
+          resolution_source?: string;
           signals?: Record<string, number>;
           reasoning?: string[];
           indicators?: Record<string, unknown>;
@@ -91,6 +100,62 @@ export interface Database {
           streak_best?: number;
           max_drawdown?: number;
           equity?: number;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      chainlink_snapshots: {
+        Row: {
+          id: number;
+          price: number;
+          round_id: string;
+          updated_at_chain: string;
+          staleness_ms: number;
+          network: string;
+          created_at: string;
+        };
+        Insert: {
+          price: number;
+          round_id: string;
+          updated_at_chain: string;
+          staleness_ms: number;
+          network?: string;
+          created_at?: string;
+        };
+        Update: {
+          price?: number;
+          round_id?: string;
+          updated_at_chain?: string;
+          staleness_ms?: number;
+          network?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      delta_history: {
+        Row: {
+          id: number;
+          binance_price: number;
+          chainlink_price: number;
+          delta_percent: number;
+          delta_direction: string;
+          edge_signal: number;
+          created_at: string;
+        };
+        Insert: {
+          binance_price: number;
+          chainlink_price: number;
+          delta_percent: number;
+          delta_direction: string;
+          edge_signal: number;
+          created_at?: string;
+        };
+        Update: {
+          binance_price?: number;
+          chainlink_price?: number;
+          delta_percent?: number;
+          delta_direction?: string;
+          edge_signal?: number;
           created_at?: string;
         };
         Relationships: [];

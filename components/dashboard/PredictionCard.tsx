@@ -118,6 +118,7 @@ export function PredictionCard({ prediction, nextPredictionIn }: PredictionCardP
         <SignalBar label="BOLL" value={prediction.signals.bollingerSignal} />
         <SignalBar label="VOL" value={prediction.signals.volumeSignal} />
         <SignalBar label="POLY" value={prediction.signals.polymarketSignal} />
+        <SignalBar label="CHAIN" value={prediction.signals.chainlinkDeltaSignal} />
       </div>
     </div>
   );
