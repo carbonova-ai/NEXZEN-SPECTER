@@ -21,85 +21,98 @@ function generateId(): string {
   return `pred_${Date.now()}_${hex}`;
 }
 
+// All external signal values passed into the prediction engine
+export interface ExternalSignals {
+  polymarketSentiment: number | null;
+  chainlinkEdgeSignal: number | null;
+  orderBookSignal: number | null;
+  fundingRateSignal: number | null;
+  onChainSignal: number | null;
+  newsSentimentSignal: number | null;
+  mlEnsembleSignal: number | null;
+}
+
 function computeSignals(
   candles: CandleData[],
   indicators: IndicatorValues,
-  polymarketSentiment: number | null,
-  chainlinkEdgeSignal: number | null
+  ext: ExternalSignals
 ): SignalBreakdown {
   const currentPrice = candles[candles.length - 1].close;
   const prevPrice = candles.length >= 2 ? candles[candles.length - 2].close : currentPrice;
   const priceChange = currentPrice - prevPrice;
 
-  const rsiSignal = interpretRSI(indicators.rsi);
-  const macdSignal = interpretMACD(indicators.macd);
-  const smaSignal = interpretSMA(candles);
-  const bollingerSignal = interpretBollinger(indicators.bollingerBands, currentPrice);
-  const volumeSignal = interpretVolume(indicators.volumeProfile, priceChange);
-  const polymarketSignal = polymarketSentiment ?? 0;
-  const chainlinkDeltaSignal = chainlinkEdgeSignal ?? 0;
-
   return {
-    rsiSignal,
-    macdSignal,
-    smaSignal,
-    bollingerSignal,
-    volumeSignal,
-    polymarketSignal,
-    chainlinkDeltaSignal,
-    aggregateScore: 0, // computed separately with weights
+    rsiSignal: interpretRSI(indicators.rsi),
+    macdSignal: interpretMACD(indicators.macd),
+    smaSignal: interpretSMA(candles),
+    bollingerSignal: interpretBollinger(indicators.bollingerBands, currentPrice),
+    volumeSignal: interpretVolume(indicators.volumeProfile, priceChange),
+    polymarketSignal: ext.polymarketSentiment ?? 0,
+    chainlinkDeltaSignal: ext.chainlinkEdgeSignal ?? 0,
+    orderBookSignal: ext.orderBookSignal ?? 0,
+    fundingRateSignal: ext.fundingRateSignal ?? 0,
+    onChainSignal: ext.onChainSignal ?? 0,
+    newsSentimentSignal: ext.newsSentimentSignal ?? 0,
+    mlEnsembleSignal: ext.mlEnsembleSignal ?? 0,
+    aggregateScore: 0,
   };
 }
+
+// Signal key → SignalBreakdown field mapping for weighted score
+const SIGNAL_WEIGHT_MAP: { key: keyof EngineConfig['weights']; field: keyof SignalBreakdown }[] = [
+  { key: 'rsi', field: 'rsiSignal' },
+  { key: 'macd', field: 'macdSignal' },
+  { key: 'sma', field: 'smaSignal' },
+  { key: 'bollinger', field: 'bollingerSignal' },
+  { key: 'volume', field: 'volumeSignal' },
+  { key: 'polymarket', field: 'polymarketSignal' },
+  { key: 'chainlinkDelta', field: 'chainlinkDeltaSignal' },
+  { key: 'orderBook', field: 'orderBookSignal' },
+  { key: 'fundingRate', field: 'fundingRateSignal' },
+  { key: 'onChain', field: 'onChainSignal' },
+  { key: 'newsSentiment', field: 'newsSentimentSignal' },
+  { key: 'mlEnsemble', field: 'mlEnsembleSignal' },
+];
 
 function computeWeightedScore(
   signals: SignalBreakdown,
   config: EngineConfig,
-  hasPolymarket: boolean,
-  hasChainlink: boolean
+  unavailableSignals: Set<keyof EngineConfig['weights']>
 ): number {
   const w = { ...config.weights };
 
-  // Collect unavailable weights to redistribute
-  const unavailableKeys: (keyof typeof w)[] = [];
-  if (!hasPolymarket) unavailableKeys.push('polymarket');
-  if (!hasChainlink) unavailableKeys.push('chainlinkDelta');
-
-  if (unavailableKeys.length > 0) {
+  // Redistribute unavailable weights proportionally
+  if (unavailableSignals.size > 0) {
     let redistributeWeight = 0;
-    for (const key of unavailableKeys) {
+    for (const key of unavailableSignals) {
       redistributeWeight += w[key];
       w[key] = 0;
     }
     const availableKeys = (Object.keys(w) as (keyof typeof w)[]).filter(
-      k => !unavailableKeys.includes(k) && w[k] > 0
+      k => !unavailableSignals.has(k) && w[k] > 0
     );
     const totalAvailable = availableKeys.reduce((sum, k) => sum + w[k], 0);
-    for (const key of availableKeys) {
-      w[key] += (w[key] / totalAvailable) * redistributeWeight;
+    if (totalAvailable > 0) {
+      for (const key of availableKeys) {
+        w[key] += (w[key] / totalAvailable) * redistributeWeight;
+      }
     }
   }
 
-  return (
-    signals.rsiSignal * w.rsi +
-    signals.macdSignal * w.macd +
-    signals.smaSignal * w.sma +
-    signals.bollingerSignal * w.bollinger +
-    signals.volumeSignal * w.volume +
-    signals.polymarketSignal * w.polymarket +
-    signals.chainlinkDeltaSignal * w.chainlinkDelta
-  );
+  let score = 0;
+  for (const { key, field } of SIGNAL_WEIGHT_MAP) {
+    score += (signals[field] as number) * w[key];
+  }
+  return score;
 }
 
-function computeConfidence(signals: SignalBreakdown, hasPolymarket: boolean, hasChainlink: boolean): ConfidenceLevel {
-  const allSignals = [
-    signals.rsiSignal,
-    signals.macdSignal,
-    signals.smaSignal,
-    signals.bollingerSignal,
-    signals.volumeSignal,
-    ...(hasPolymarket ? [signals.polymarketSignal] : []),
-    ...(hasChainlink ? [signals.chainlinkDeltaSignal] : []),
-  ];
+function computeConfidence(signals: SignalBreakdown, unavailableSignals: Set<string>): ConfidenceLevel {
+  const allSignals: number[] = [];
+  for (const { key, field } of SIGNAL_WEIGHT_MAP) {
+    if (!unavailableSignals.has(key)) {
+      allSignals.push(signals[field] as number);
+    }
+  }
 
   const nonZero = allSignals.filter(s => Math.abs(s) > 0.1);
   if (nonZero.length === 0) return 'LOW';
@@ -107,8 +120,8 @@ function computeConfidence(signals: SignalBreakdown, hasPolymarket: boolean, has
   const direction = nonZero.reduce((sum, s) => sum + Math.sign(s), 0);
   const agreement = Math.abs(direction) / nonZero.length;
 
-  if (agreement >= 0.7 && nonZero.length >= 3) return 'HIGH';
-  if (agreement >= 0.5 && nonZero.length >= 2) return 'MED';
+  if (agreement >= 0.7 && nonZero.length >= 4) return 'HIGH';
+  if (agreement >= 0.5 && nonZero.length >= 3) return 'MED';
   return 'LOW';
 }
 
@@ -142,6 +155,23 @@ function buildReasoning(signals: SignalBreakdown, indicators: IndicatorValues): 
   else if (signals.chainlinkDeltaSignal < -0.3) reasons.push('Chainlink oracle lagging — bearish edge detected');
   else if (Math.abs(signals.chainlinkDeltaSignal) > 0.1) reasons.push('Chainlink-Binance delta detected');
 
+  // Phase 5 reasoning
+  if (Math.abs(signals.orderBookSignal) > 0.3) {
+    reasons.push(`Order book ${signals.orderBookSignal > 0 ? 'bid' : 'ask'} imbalance detected`);
+  }
+  if (Math.abs(signals.fundingRateSignal) > 0.3) {
+    reasons.push(`Funding rate contrarian ${signals.fundingRateSignal > 0 ? 'bullish' : 'bearish'}`);
+  }
+  if (Math.abs(signals.onChainSignal) > 0.3) {
+    reasons.push(`On-chain whale ${signals.onChainSignal > 0 ? 'accumulation' : 'distribution'}`);
+  }
+  if (Math.abs(signals.newsSentimentSignal) > 0.3) {
+    reasons.push(`News sentiment ${signals.newsSentimentSignal > 0 ? 'bullish' : 'bearish'}`);
+  }
+  if (Math.abs(signals.mlEnsembleSignal) > 0.3) {
+    reasons.push(`ML ensemble predicts ${signals.mlEnsembleSignal > 0 ? 'UP' : 'DOWN'}`);
+  }
+
   return reasons;
 }
 
@@ -151,33 +181,51 @@ export function generatePrediction(
   polymarketSentiment: number | null,
   chainlinkEdgeSignal: number | null = null,
   chainlinkPrice: number | null = null,
-  config: EngineConfig = DEFAULT_ENGINE_CONFIG
+  config: EngineConfig = DEFAULT_ENGINE_CONFIG,
+  // Phase 5 external signals
+  orderBookSignal: number | null = null,
+  fundingRateSignal: number | null = null,
+  onChainSignal: number | null = null,
+  newsSentimentSignal: number | null = null,
+  mlEnsembleSignal: number | null = null,
 ): Prediction | null {
-  // Need at least 50 candles for meaningful indicators
   if (candles.length < 50) return null;
 
   const indicators = computeAllIndicators(candles);
-  const safeSentiment = polymarketSentiment !== null && Number.isFinite(polymarketSentiment)
-    ? polymarketSentiment
-    : null;
-  const hasPolymarket = safeSentiment !== null;
 
-  const safeChainlink = chainlinkEdgeSignal !== null && Number.isFinite(chainlinkEdgeSignal)
-    ? chainlinkEdgeSignal
-    : null;
-  const hasChainlink = safeChainlink !== null;
+  const safeNum = (v: number | null) =>
+    v !== null && Number.isFinite(v) ? v : null;
 
-  const signals = computeSignals(candles, indicators, safeSentiment, safeChainlink);
-  const rawScore = computeWeightedScore(signals, config, hasPolymarket, hasChainlink);
+  const ext: ExternalSignals = {
+    polymarketSentiment: safeNum(polymarketSentiment),
+    chainlinkEdgeSignal: safeNum(chainlinkEdgeSignal),
+    orderBookSignal: safeNum(orderBookSignal),
+    fundingRateSignal: safeNum(fundingRateSignal),
+    onChainSignal: safeNum(onChainSignal),
+    newsSentimentSignal: safeNum(newsSentimentSignal),
+    mlEnsembleSignal: safeNum(mlEnsembleSignal),
+  };
+
+  // Track which signals are unavailable for weight redistribution
+  const unavailable = new Set<keyof EngineConfig['weights']>();
+  if (ext.polymarketSentiment === null) unavailable.add('polymarket');
+  if (ext.chainlinkEdgeSignal === null) unavailable.add('chainlinkDelta');
+  if (ext.orderBookSignal === null) unavailable.add('orderBook');
+  if (ext.fundingRateSignal === null) unavailable.add('fundingRate');
+  if (ext.onChainSignal === null) unavailable.add('onChain');
+  if (ext.newsSentimentSignal === null) unavailable.add('newsSentiment');
+  if (ext.mlEnsembleSignal === null) unavailable.add('mlEnsemble');
+
+  const signals = computeSignals(candles, indicators, ext);
+  const rawScore = computeWeightedScore(signals, config, unavailable);
   const aggregateScore = Number.isFinite(rawScore) ? rawScore : 0;
   signals.aggregateScore = aggregateScore;
 
   const direction = aggregateScore >= 0 ? 'UP' : 'DOWN';
   const probability = Math.min(0.95, 0.5 + Math.abs(aggregateScore) * 0.45);
-  const confidence = computeConfidence(signals, hasPolymarket, hasChainlink);
+  const confidence = computeConfidence(signals, unavailable);
   const reasoning = buildReasoning(signals, indicators);
 
-  // Target: conservative 0.1-0.2% move in 5 min window
   const movePercent = aggregateScore * 0.002;
   const targetPrice = currentPrice * (1 + movePercent);
 

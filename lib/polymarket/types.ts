@@ -68,3 +68,72 @@ export interface PolymarketSentiment {
 }
 
 export type PriceGranularity = '1m' | '5m' | '15m' | '1h' | '6h' | '1d' | '1w';
+
+// ── CLOB Order Types ──
+
+export type OrderSide = 'BUY' | 'SELL';
+export type OrderType = 'GTC' | 'GTD' | 'FOK';
+export type OrderStatus = 'LIVE' | 'MATCHED' | 'CANCELLED' | 'EXPIRED';
+
+export interface ClobOrderRequest {
+  tokenId: string;
+  side: OrderSide;
+  price: number;           // 0-1 for outcome token price
+  size: number;             // Number of outcome tokens
+  orderType: OrderType;
+  expiration?: number;      // Unix timestamp (0 = no expiration)
+}
+
+export interface ClobSignedOrder {
+  salt: string;
+  maker: string;
+  signer: string;
+  taker: string;
+  tokenId: string;
+  makerAmount: string;
+  takerAmount: string;
+  expiration: string;
+  nonce: string;
+  feeRateBps: string;
+  side: number;             // 0 = BUY, 1 = SELL
+  signatureType: number;
+  signature: string;
+}
+
+export interface ClobOrderResponse {
+  orderID: string;
+  status: OrderStatus;
+  transactionsHashes?: string[];
+  createdAt?: number;
+}
+
+export interface ClobOrderStatusResponse {
+  id: string;
+  status: OrderStatus;
+  price: string;
+  original_size: string;
+  size_matched: string;
+  outcome: string;
+  owner: string;
+  created_at: number;
+}
+
+export interface TradeRequest {
+  predictionId: string;
+  direction: 'UP' | 'DOWN';
+  confidence: 'LOW' | 'MED' | 'HIGH';
+  probability: number;
+  targetMarketId?: string;  // Specific market, or auto-discover
+}
+
+export interface TradeResult {
+  success: boolean;
+  orderId: string | null;
+  tokenId: string;
+  side: OrderSide;
+  price: number;
+  size: number;
+  stake: number;            // USDC amount
+  error: string | null;
+  timestamp: number;
+}

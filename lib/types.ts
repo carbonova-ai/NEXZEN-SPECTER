@@ -64,6 +64,12 @@ export interface SignalBreakdown {
   volumeSignal: number;
   polymarketSignal: number;
   chainlinkDeltaSignal: number;
+  // Phase 5 signals
+  orderBookSignal: number;
+  fundingRateSignal: number;
+  onChainSignal: number;
+  newsSentimentSignal: number;
+  mlEnsembleSignal: number;
   aggregateScore: number;
 }
 
@@ -112,6 +118,75 @@ export interface PerformanceStats {
   maxDrawdown: number;
 }
 
+// ── Paper Trading ──
+
+export interface PaperTradingConfig {
+  initialBankroll: number;        // Starting USDC balance
+  maxStakePercent: number;        // Max % of bankroll per trade (e.g. 0.05 = 5%)
+  kellyFraction: number;          // Kelly criterion fraction (0.25 = quarter-Kelly)
+  minStake: number;               // Minimum USDC per trade
+  maxStake: number;               // Maximum USDC per trade
+  circuitBreakerDrawdown: number; // Stop trading if drawdown exceeds this % (e.g. 0.15 = 15%)
+  circuitBreakerLosses: number;   // Stop after N consecutive losses
+  spreadCost: number;             // Simulated spread/fee per trade (e.g. 0.02 = 2%)
+}
+
+export const DEFAULT_PAPER_TRADING_CONFIG: PaperTradingConfig = {
+  initialBankroll: 1000,          // $1000 USDC starting
+  maxStakePercent: 0.05,          // 5% max per trade
+  kellyFraction: 0.25,            // Quarter-Kelly (conservative)
+  minStake: 1,                    // $1 minimum
+  maxStake: 50,                   // $50 maximum
+  circuitBreakerDrawdown: 0.15,   // Stop at 15% drawdown
+  circuitBreakerLosses: 5,        // Stop after 5 consecutive losses
+  spreadCost: 0.02,               // 2% spread cost
+};
+
+export type PaperTradeStatus = 'OPEN' | 'WON' | 'LOST' | 'SKIPPED';
+
+export interface PaperTrade {
+  id: string;
+  predictionId: string;
+  direction: PredictionDirection;
+  confidence: ConfidenceLevel;
+  probability: number;
+  stake: number;                  // USDC risked
+  entryPrice: number;
+  exitPrice: number | null;
+  yesPrice: number;               // Simulated Polymarket YES price at entry
+  payout: number | null;          // USDC received if won
+  pnl: number | null;             // Net profit/loss in USDC
+  status: PaperTradeStatus;
+  skipReason: string | null;      // Why trade was skipped (circuit breaker, low confidence, etc.)
+  bankrollBefore: number;
+  bankrollAfter: number | null;
+  timestamp: number;
+  resolvedAt: number | null;
+}
+
+export interface PaperTradingStats {
+  bankroll: number;
+  initialBankroll: number;
+  totalTrades: number;
+  wins: number;
+  losses: number;
+  skipped: number;
+  winRate: number;
+  totalStaked: number;
+  totalPnl: number;
+  roi: number;                    // totalPnl / totalStaked
+  avgStake: number;
+  avgPnl: number;
+  bestTrade: number;
+  worstTrade: number;
+  consecutiveLosses: number;
+  maxConsecutiveLosses: number;
+  maxDrawdown: number;
+  peakBankroll: number;
+  circuitBreakerActive: boolean;
+  bankrollHistory: { timestamp: number; bankroll: number }[];
+}
+
 // ── Connection ──
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
@@ -127,6 +202,11 @@ export interface EngineConfig {
     volume: number;
     polymarket: number;
     chainlinkDelta: number;
+    orderBook: number;
+    fundingRate: number;
+    onChain: number;
+    newsSentiment: number;
+    mlEnsemble: number;
   };
   predictionCycleMs: number;
   minConfidence: number;
@@ -134,13 +214,18 @@ export interface EngineConfig {
 
 export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
   weights: {
-    rsi: 0.15,
-    macd: 0.15,
-    sma: 0.12,
-    bollinger: 0.12,
-    volume: 0.08,
-    polymarket: 0.15,
-    chainlinkDelta: 0.23,
+    rsi: 0.10,
+    macd: 0.10,
+    sma: 0.08,
+    bollinger: 0.08,
+    volume: 0.05,
+    polymarket: 0.12,
+    chainlinkDelta: 0.17,
+    orderBook: 0.10,
+    fundingRate: 0.05,
+    onChain: 0.05,
+    newsSentiment: 0.05,
+    mlEnsemble: 0.05,
   },
   predictionCycleMs: 300_000,
   minConfidence: 0.55,

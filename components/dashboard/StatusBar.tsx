@@ -8,6 +8,7 @@ interface StatusBarProps {
   polymarketStatus: ConnectionStatus;
   chainlinkStatus: ConnectionStatus;
   polymarketError: string | null;
+  children?: React.ReactNode;
 }
 
 function ConnectionDot({ status, label }: { status: ConnectionStatus; label: string }) {
@@ -26,7 +27,7 @@ function ConnectionDot({ status, label }: { status: ConnectionStatus; label: str
   );
 }
 
-export function StatusBar({ binanceStatus, polymarketStatus, chainlinkStatus, polymarketError }: StatusBarProps) {
+export function StatusBar({ binanceStatus, polymarketStatus, chainlinkStatus, polymarketError, children }: StatusBarProps) {
   const [time, setTime] = useState('');
 
   useEffect(() => {
@@ -56,7 +57,10 @@ export function StatusBar({ binanceStatus, polymarketStatus, chainlinkStatus, po
       </div>
 
       <div className="flex items-center gap-3">
-        <span className="text-xs text-nexzen-muted">BTC/USDT</span>
+        {children}
+        <a href="/backtest" className="text-[9px] text-nexzen-muted hover:text-nexzen-primary transition-colors">
+          BACKTEST
+        </a>
         <span className="text-xs font-mono text-nexzen-text">{time} UTC</span>
       </div>
     </div>

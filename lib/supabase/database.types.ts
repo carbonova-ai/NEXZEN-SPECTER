@@ -194,6 +194,73 @@ export interface Database {
         };
         Relationships: [];
       };
+      paper_trades: {
+        Row: {
+          id: string;
+          prediction_id: string;
+          direction: string;
+          confidence: string;
+          probability: number;
+          stake: number;
+          entry_price: number;
+          exit_price: number | null;
+          yes_price: number;
+          payout: number | null;
+          pnl: number | null;
+          status: string;
+          skip_reason: string | null;
+          bankroll_before: number;
+          bankroll_after: number | null;
+          created_at: string;
+          resolved_at: string | null;
+        };
+        Insert: {
+          id: string;
+          prediction_id: string;
+          direction: string;
+          confidence: string;
+          probability: number;
+          stake?: number;
+          entry_price: number;
+          exit_price?: number | null;
+          yes_price?: number;
+          payout?: number | null;
+          pnl?: number | null;
+          status?: string;
+          skip_reason?: string | null;
+          bankroll_before: number;
+          bankroll_after?: number | null;
+          created_at?: string;
+          resolved_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          prediction_id?: string;
+          direction?: string;
+          confidence?: string;
+          probability?: number;
+          stake?: number;
+          entry_price?: number;
+          exit_price?: number | null;
+          yes_price?: number;
+          payout?: number | null;
+          pnl?: number | null;
+          status?: string;
+          skip_reason?: string | null;
+          bankroll_before?: number;
+          bankroll_after?: number | null;
+          created_at?: string;
+          resolved_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'paper_trades_prediction_id_fkey';
+            columns: ['prediction_id'];
+            referencedRelation: 'predictions';
+            referencedColumns: ['id'];
+          }
+        ];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

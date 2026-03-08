@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { CandleData, Prediction, PredictionResult, PerformanceStats } from '@/lib/types';
+import { CandleData, Prediction, PredictionResult, PerformanceStats, EngineConfig } from '@/lib/types';
 import { generatePrediction } from '@/lib/engine/prediction';
 import { evaluatePrediction, calculatePerformance } from '@/lib/engine/backtest';
 import {
@@ -37,12 +37,26 @@ function saveHistory(history: PredictionResult[]) {
   }
 }
 
+export interface Phase5Signals {
+  orderBook: number | null;
+  fundingRate: number | null;
+  onChain: number | null;
+  newsSentiment: number | null;
+  mlEnsemble: number | null;
+}
+
+const DEFAULT_P5: Phase5Signals = {
+  orderBook: null, fundingRate: null, onChain: null, newsSentiment: null, mlEnsemble: null,
+};
+
 export function usePredictionEngine(
   candles: CandleData[],
   currentPrice: number | null,
   polymarketSentiment: number | null,
   chainlinkEdgeSignal: number | null = null,
-  chainlinkPrice: number | null = null
+  chainlinkPrice: number | null = null,
+  adaptiveConfig: EngineConfig | null = null,
+  phase5Signals: Phase5Signals = DEFAULT_P5
 ) {
   const [currentPrediction, setCurrentPrediction] = useState<Prediction | null>(null);
   const [history, setHistory] = useState<PredictionResult[]>(() => loadHistory());
@@ -62,10 +76,14 @@ export function usePredictionEngine(
   const currentPriceRef = useRef(currentPrice);
   const sentimentRef = useRef(polymarketSentiment);
   const edgeSignalRef = useRef(chainlinkEdgeSignal);
+  const adaptiveConfigRef = useRef(adaptiveConfig);
+  const phase5Ref = useRef(phase5Signals);
   candlesRef.current = candles;
   currentPriceRef.current = currentPrice;
   sentimentRef.current = polymarketSentiment;
+  phase5Ref.current = phase5Signals;
   edgeSignalRef.current = chainlinkEdgeSignal;
+  adaptiveConfigRef.current = adaptiveConfig;
 
   // Load history from Supabase on mount
   useEffect(() => {
@@ -131,10 +149,14 @@ export function usePredictionEngine(
     // Evaluate previous prediction
     resolvePrevious(price);
 
-    // Generate new prediction with Chainlink oracle edge
+    // Generate new prediction with all signals + adaptive weights
+    const config = adaptiveConfigRef.current ?? undefined;
+    const p5 = phase5Ref.current;
     const prediction = generatePrediction(
       cndls, price, sentimentRef.current,
-      edgeSignalRef.current, chainlinkPriceRef.current
+      edgeSignalRef.current, chainlinkPriceRef.current,
+      config,
+      p5.orderBook, p5.fundingRate, p5.onChain, p5.newsSentiment, p5.mlEnsemble
     );
     currentPredictionRef.current = prediction;
     setCurrentPrediction(prediction);
