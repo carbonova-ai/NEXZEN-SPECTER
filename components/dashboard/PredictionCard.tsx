@@ -108,6 +108,9 @@ export function PredictionCard({ prediction, nextPredictionIn }: PredictionCardP
           <span className="text-nexzen-muted">Target: </span>
           <span className="tabular-nums">${prediction.targetPrice.toLocaleString('en-US', { maximumFractionDigits: 2 })}</span>
         </div>
+        <div className="col-span-2 text-[9px] text-nexzen-muted/50 mt-0.5">
+          Entry via Binance · Resolve via {prediction.resolutionSource === 'chainlink' ? 'Chainlink Oracle' : 'Binance'}
+        </div>
       </div>
 
       <div className="space-y-1.5 border-t border-nexzen-border pt-3">

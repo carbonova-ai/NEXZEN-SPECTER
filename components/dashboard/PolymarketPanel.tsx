@@ -57,6 +57,7 @@ export function PolymarketPanel({ markets, midpoints, sentimentScore, isLoading,
       <div className="flex items-center justify-between mb-3">
         <div className="text-[10px] uppercase tracking-wider text-nexzen-muted">
           POLYMARKET INTELLIGENCE
+          <span className="normal-case text-nexzen-muted/50 ml-1">via Gamma + CLOB API</span>
         </div>
         {error ? (
           <span className="text-[9px] text-nexzen-danger uppercase">OFFLINE</span>

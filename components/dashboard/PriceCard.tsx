@@ -5,9 +5,11 @@ import { TickerData } from '@/lib/types';
 
 interface PriceCardProps {
   ticker: TickerData | null;
+  chainlinkPrice: number | null;
+  chainlinkDelta: number | null;
 }
 
-export function PriceCard({ ticker }: PriceCardProps) {
+export function PriceCard({ ticker, chainlinkPrice, chainlinkDelta }: PriceCardProps) {
   const prevPriceRef = useRef<number | null>(null);
   const [flashClass, setFlashClass] = useState('');
 
@@ -26,7 +28,7 @@ export function PriceCard({ ticker }: PriceCardProps) {
   if (!ticker) {
     return (
       <div className="glass-card p-4">
-        <div className="text-[10px] uppercase tracking-wider text-nexzen-muted mb-2">BTC PRICE LIVE</div>
+        <div className="text-[10px] uppercase tracking-wider text-nexzen-muted mb-2">BTC/USDT</div>
         <div className="text-2xl font-bold text-nexzen-muted animate-pulse">CONNECTING...</div>
       </div>
     );
@@ -35,11 +37,18 @@ export function PriceCard({ ticker }: PriceCardProps) {
   const isPositive = ticker.priceChangePercent24h >= 0;
   const changeColor = isPositive ? 'text-nexzen-primary' : 'text-nexzen-danger';
 
+  const deltaAbs = chainlinkDelta !== null ? Math.abs(chainlinkDelta) : 0;
+  const deltaColor = deltaAbs >= 0.003 ? 'text-yellow-400' : deltaAbs >= 0.001 ? 'text-nexzen-text' : 'text-nexzen-muted';
+
   return (
     <div className={`glass-card p-4 ${flashClass}`}>
-      <div className="text-[10px] uppercase tracking-wider text-nexzen-muted mb-2">
-        BTC PRICE LIVE
-        <span className="ml-2 inline-block w-1.5 h-1.5 rounded-full bg-nexzen-primary animate-pulse-glow" />
+      {/* Binance live price */}
+      <div className="text-[10px] uppercase tracking-wider text-nexzen-muted mb-1 flex items-center justify-between">
+        <span className="flex items-center gap-1.5">
+          BTC/USDT
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-nexzen-primary animate-pulse-glow" />
+        </span>
+        <span className="text-nexzen-muted/60 normal-case">via Binance WS</span>
       </div>
 
       <div className="text-2xl font-bold text-nexzen-text tabular-nums">
@@ -60,12 +69,34 @@ export function PriceCard({ ticker }: PriceCardProps) {
           <span className="text-nexzen-muted">L: </span>
           <span className="tabular-nums">${ticker.low24h.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
         </div>
-        <div className="col-span-2">
-          <span className="text-nexzen-muted">Vol: </span>
-          <span className="tabular-nums">
-            ${(ticker.volume24h / 1e9).toFixed(2)}B
-          </span>
+      </div>
+
+      {/* Chainlink oracle price */}
+      <div className="mt-3 pt-3 border-t border-nexzen-border/50">
+        <div className="text-[10px] uppercase tracking-wider text-nexzen-muted mb-1 flex items-center justify-between">
+          <span>Oracle BTC/USD</span>
+          <span className="text-nexzen-muted/60 normal-case">via Chainlink · Arbitrum</span>
         </div>
+        {chainlinkPrice !== null ? (
+          <div className="flex items-baseline justify-between">
+            <span className="text-sm font-bold text-nexzen-text tabular-nums">
+              ${chainlinkPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+            {chainlinkDelta !== null && (
+              <span className={`text-[11px] tabular-nums ${deltaColor}`}>
+                Delta: {chainlinkDelta >= 0 ? '+' : ''}{(chainlinkDelta * 100).toFixed(3)}%
+              </span>
+            )}
+          </div>
+        ) : (
+          <span className="text-sm text-nexzen-muted animate-pulse">Connecting...</span>
+        )}
+      </div>
+
+      {/* Volume */}
+      <div className="mt-2 text-[11px]">
+        <span className="text-nexzen-muted">Vol 24h: </span>
+        <span className="tabular-nums">${(ticker.volume24h / 1e9).toFixed(2)}B</span>
       </div>
     </div>
   );

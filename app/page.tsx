@@ -69,7 +69,11 @@ export default function Dashboard() {
       <main className="flex-1 p-3 md:p-4 space-y-3 md:space-y-4 max-w-[1600px] mx-auto w-full">
         {/* Top Row: Price + Prediction + Polymarket */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
-          <PriceCard ticker={ticker} />
+          <PriceCard
+            ticker={ticker}
+            chainlinkPrice={chainlinkPrice?.price ?? null}
+            chainlinkDelta={delta?.currentDelta?.deltaPercent ?? null}
+          />
           <PredictionCard
             prediction={currentPrediction}
             nextPredictionIn={nextPredictionIn}

@@ -106,6 +106,11 @@ export function CandlestickChart({ candles, predictions }: CandlestickChartProps
 
     seriesRef.current.setData(chartData);
 
+    // Auto-scroll to show latest candle
+    if (chartRef.current) {
+      chartRef.current.timeScale().scrollToRealTime();
+    }
+
     // Add prediction markers
     if (markersRef.current) {
       const markerData = predictions
@@ -125,8 +130,9 @@ export function CandlestickChart({ candles, predictions }: CandlestickChartProps
 
   return (
     <div className="glass-card p-3">
-      <div className="text-[10px] uppercase tracking-wider text-nexzen-muted mb-2">
-        5-MIN CANDLESTICK CHART
+      <div className="text-[10px] uppercase tracking-wider text-nexzen-muted mb-2 flex items-center justify-between">
+        <span>BTCUSDT · 5m CANDLES</span>
+        <span className="normal-case text-nexzen-muted/60">via Binance Kline WS + REST</span>
       </div>
       <div ref={containerRef} className="w-full h-[300px] md:h-[400px]" />
     </div>

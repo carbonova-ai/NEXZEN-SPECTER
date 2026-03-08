@@ -65,6 +65,27 @@ export async function fetchMidpointsForMarkets(
   return midpoints;
 }
 
+/**
+ * Compute time-horizon weight: short-term markets (hours/days) get
+ * exponentially more weight than long-term markets (months) since we
+ * make 5-minute predictions.
+ *
+ * - Ends in < 1 day   → weight 10x
+ * - Ends in < 7 days  → weight 3x
+ * - Ends in < 30 days → weight 1x
+ * - Ends in > 30 days → weight 0.1x (near-zero influence)
+ */
+function timeHorizonMultiplier(endDate: string): number {
+  const end = new Date(endDate).getTime();
+  if (isNaN(end)) return 0.1;
+  const daysUntilEnd = (end - Date.now()) / (1000 * 60 * 60 * 24);
+  if (daysUntilEnd <= 0) return 0; // expired
+  if (daysUntilEnd < 1) return 10;
+  if (daysUntilEnd < 7) return 3;
+  if (daysUntilEnd < 30) return 1;
+  return 0.1;
+}
+
 export function computeSentimentFromMarkets(
   markets: PolymarketMarket[],
   midpoints: Map<string, number>
@@ -85,10 +106,13 @@ export function computeSentimentFromMarkets(
 
     if (yesPrice === null || yesPrice === undefined || !Number.isFinite(yesPrice)) continue;
 
-    // Weight by volume and sqrt of liquidity
+    // Weight by volume, sqrt of liquidity, and time horizon
     const volume = Number.isFinite(market.volume) && market.volume > 0 ? market.volume : 1;
     const liquidity = Number.isFinite(market.liquidity) && market.liquidity > 0 ? market.liquidity : 1;
-    const weight = volume * Math.sqrt(liquidity);
+    const timeMult = timeHorizonMultiplier(market.endDate);
+    if (timeMult === 0) continue; // skip expired markets
+
+    const weight = volume * Math.sqrt(liquidity) * timeMult;
 
     // Convert yes price to sentiment:
     // Bullish market: high yes price = bullish sentiment (+1)
