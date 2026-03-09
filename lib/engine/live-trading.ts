@@ -53,22 +53,32 @@ export interface LiveTradingStats {
   peakBankroll: number;
 }
 
-// ── Kelly Criterion (same as paper trading) ──
+// ── Dynamic Kelly Criterion (matches paper trading) ──
 
 function kellyStake(
   probability: number,
   bankroll: number,
-  config: PaperTradingConfig
+  config: PaperTradingConfig,
+  consecutiveLosses: number = 0,
+  marketPrice: number = 0.50
 ): number {
   const p = Math.min(0.95, Math.max(0.5, probability));
   const q = 1 - p;
-  const b = (1 / 0.50) - 1 - config.spreadCost;
+
+  // Use actual market price for odds
+  const safePrice = Math.max(0.01, Math.min(0.99, marketPrice));
+  const b = (1 / safePrice) - 1 - config.spreadCost;
   if (b <= 0) return 0;
 
   const fullKelly = (b * p - q) / b;
   if (fullKelly <= 0) return 0;
 
-  const kellyFrac = fullKelly * config.kellyFraction;
+  // Dynamic fraction: reduce on loss streaks for live trading (extra conservative)
+  let dynamicFraction = config.kellyFraction;
+  if (consecutiveLosses >= 3) dynamicFraction = config.kellyFraction * 0.4;
+  else if (consecutiveLosses >= 2) dynamicFraction = config.kellyFraction * 0.65;
+
+  const kellyFrac = fullKelly * dynamicFraction;
   const rawStake = bankroll * kellyFrac;
 
   const maxByPercent = bankroll * config.maxStakePercent;
@@ -149,6 +159,7 @@ export async function executeTradeViaApi(
         price,
         stakeUsdc,
       }),
+      signal: AbortSignal.timeout(15_000), // Prevent indefinite hang on slow/dead server
     });
 
     if (!res.ok) {
@@ -292,8 +303,8 @@ export class LiveTradingEngine {
     const livePrice = midpoints.get(tokenInfo.tokenId);
     const price = livePrice ?? tokenInfo.price;
 
-    // Calculate stake with Kelly
-    const stake = kellyStake(prediction.probability, this.bankroll, this.config);
+    // Calculate stake with dynamic Kelly
+    const stake = kellyStake(prediction.probability, this.bankroll, this.config, this.consecutiveLosses, price);
     if (stake <= 0 || stake < this.config.minStake) {
       return this.createSkippedTrade(prediction, 'Kelly says no edge', now);
     }

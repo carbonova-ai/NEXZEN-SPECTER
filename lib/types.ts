@@ -42,6 +42,14 @@ export interface VolumeProfile {
   isAnomaly: boolean;
 }
 
+export interface VWAPResult {
+  vwap: number;
+  deviation: number;
+  upperBand: number;
+  lowerBand: number;
+  isMeanReversion: boolean;
+}
+
 export interface IndicatorValues {
   rsi: number | null;
   sma20: number | null;
@@ -49,6 +57,7 @@ export interface IndicatorValues {
   macd: MACDResult | null;
   bollingerBands: BollingerBandsResult | null;
   volumeProfile: VolumeProfile | null;
+  vwap: VWAPResult | null;
 }
 
 // ── Prediction Engine ──
@@ -62,6 +71,7 @@ export interface SignalBreakdown {
   smaSignal: number;
   bollingerSignal: number;
   volumeSignal: number;
+  vwapSignal: number;
   polymarketSignal: number;
   chainlinkDeltaSignal: number;
   // Phase 5 signals
@@ -200,6 +210,7 @@ export interface EngineConfig {
     sma: number;
     bollinger: number;
     volume: number;
+    vwap: number;
     polymarket: number;
     chainlinkDelta: number;
     orderBook: number;
@@ -214,18 +225,19 @@ export interface EngineConfig {
 
 export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
   weights: {
-    rsi: 0.08,
-    macd: 0.09,
-    sma: 0.07,
-    bollinger: 0.07,
-    volume: 0.06,
-    polymarket: 0.07,        // Reduced — circular (predicting market with market price)
+    rsi: 0.07,
+    macd: 0.08,
+    sma: 0.06,
+    bollinger: 0.06,
+    volume: 0.05,
+    vwap: 0.08,              // NEW: institutional flow benchmark
+    polymarket: 0.06,        // Reduced — circular (predicting market with market price)
     chainlinkDelta: 0.13,    // Core edge — oracle lag detection
-    orderBook: 0.12,         // Boosted — high-quality real-time CLOB depth
+    orderBook: 0.11,         // High-quality real-time CLOB depth
     fundingRate: 0.07,       // Contrarian indicator
-    onChain: 0.07,           // Whale flow detection
-    newsSentiment: 0.07,     // Breaking news moves crypto fast
-    mlEnsemble: 0.10,        // Meta-learner — grows with data
+    onChain: 0.06,           // Whale flow detection
+    newsSentiment: 0.06,     // Breaking news moves crypto fast
+    mlEnsemble: 0.11,        // Meta-learner — grows with data (boosted now that feedback works)
   },
   predictionCycleMs: 300_000,
   minConfidence: 0.55,

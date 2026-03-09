@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { executeTrade, isLiveTradingConfigured, getOrderStatus, cancelOrder } from '@/lib/polymarket/order-execution';
-import type { TradeRequest } from '@/lib/polymarket/types';
 
 /**
  * POST /api/trade — Execute a trade on Polymarket CLOB

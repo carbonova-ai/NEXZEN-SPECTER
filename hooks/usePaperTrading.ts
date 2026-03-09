@@ -40,7 +40,8 @@ function saveLocalTrades(trades: PaperTrade[]) {
 export function usePaperTrading(
   currentPrediction: Prediction | null,
   history: PredictionResult[],
-  config: PaperTradingConfig = DEFAULT_PAPER_TRADING_CONFIG
+  config: PaperTradingConfig = DEFAULT_PAPER_TRADING_CONFIG,
+  polymarketMidpoint?: number | null
 ) {
   const [stats, setStats] = useState<PaperTradingStats | null>(null);
   const [trades, setTrades] = useState<PaperTrade[]>([]);
@@ -81,7 +82,8 @@ export function usePaperTrading(
     if (currentPrediction.id === lastPredictionIdRef.current) return;
     lastPredictionIdRef.current = currentPrediction.id;
 
-    const trade = engine.openTrade(currentPrediction);
+    const midpoint = polymarketMidpoint && polymarketMidpoint > 0 ? polymarketMidpoint : undefined;
+    const trade = engine.openTrade(currentPrediction, midpoint);
     setLastTrade(trade);
     setTrades(engine.getTrades());
     setStats(engine.getStats());

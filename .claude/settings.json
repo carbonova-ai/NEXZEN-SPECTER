@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx eslint app/ hooks/ components/ lib/)"
+    ]
+  }
+}

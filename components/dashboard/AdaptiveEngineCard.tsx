@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { DEFAULT_ENGINE_CONFIG } from '@/lib/types';
 import { type OptimizationResult, type MarketRegime, regimeLabel, regimeColor } from '@/lib/engine/weight-optimizer';
 import type { Alert } from '@/lib/engine/alerts';
@@ -64,10 +65,18 @@ function AlertRow({ alert }: { alert: Alert }) {
     CRITICAL: 'text-nexzen-danger',
   }[alert.level];
 
-  const age = Date.now() - alert.timestamp;
-  const ageLabel = age < 60_000 ? 'now' :
-    age < 3_600_000 ? `${Math.floor(age / 60_000)}m` :
-    `${Math.floor(age / 3_600_000)}h`;
+  const [ageLabel, setAgeLabel] = useState('now');
+  useEffect(() => {
+    function update() {
+      const age = Date.now() - alert.timestamp;
+      setAgeLabel(age < 60_000 ? 'now' :
+        age < 3_600_000 ? `${Math.floor(age / 60_000)}m` :
+        `${Math.floor(age / 3_600_000)}h`);
+    }
+    update();
+    const interval = setInterval(update, 30_000);
+    return () => clearInterval(interval);
+  }, [alert.timestamp]);
 
   return (
     <div className="flex items-center justify-between text-[10px] py-1 border-b border-nexzen-border/30">

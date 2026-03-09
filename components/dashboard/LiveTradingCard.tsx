@@ -56,7 +56,6 @@ function TradeRow({ trade }: { trade: LiveTrade }) {
   }
 
   const arrow = trade.direction === 'UP' ? '\u25B2' : '\u25BC';
-  const isFilled = trade.status === 'FILLED';
   const hasPnl = trade.pnl !== null;
 
   return (

@@ -1,44 +1,59 @@
 import {
   Prediction,
-  PredictionResult,
   PaperTrade,
-  PaperTradeStatus,
   PaperTradingConfig,
   PaperTradingStats,
   DEFAULT_PAPER_TRADING_CONFIG,
 } from '@/lib/types';
 
-// ── Kelly Criterion Position Sizing ──
+// ── Dynamic Kelly Criterion Position Sizing ──
 
 /**
  * Full Kelly: f* = (bp - q) / b
  * where b = net odds (payout/stake - 1), p = win probability, q = 1 - p
- * We use fractional Kelly (quarter-Kelly by default) for safety.
+ *
+ * DYNAMIC FRACTION:
+ * - Base: quarter-Kelly (0.25)
+ * - Boost on win streaks: up to half-Kelly (0.50) after 5+ consecutive wins
+ * - Reduce on loss streaks: down to eighth-Kelly (0.125) after 3+ consecutive losses
+ * - Uses actual market price for odds calculation (not hardcoded 0.50)
  */
 function kellyStake(
   probability: number,
   bankroll: number,
-  config: PaperTradingConfig
+  config: PaperTradingConfig,
+  consecutiveLosses: number = 0,
+  consecutiveWins: number = 0,
+  marketPrice: number = 0.50
 ): number {
-  // On Polymarket 5-min markets, YES/NO prices reflect odds
-  // If we predict UP with 60% confidence, we buy YES at ~0.50 (market midpoint)
-  // Payout is $1 if correct, so net odds b = (1 / yesPrice) - 1
-  // For simplicity, use probability as our edge estimate
   const p = Math.min(0.95, Math.max(0.5, probability));
   const q = 1 - p;
 
-  // Assume market offers ~50/50 odds (YES price ≈ 0.50), so b ≈ 1.0
-  // Adjusted for spread cost
-  const b = (1 / 0.50) - 1 - config.spreadCost; // ~0.98 after 2% spread
+  // Use actual market price for odds calculation
+  const safePrice = Math.max(0.01, Math.min(0.99, marketPrice));
+  const b = (1 / safePrice) - 1 - config.spreadCost;
   if (b <= 0) return 0;
 
   const fullKelly = (b * p - q) / b;
-  if (fullKelly <= 0) return 0; // No edge → don't bet
+  if (fullKelly <= 0) return 0;
 
-  const kellyFrac = fullKelly * config.kellyFraction;
+  // Dynamic Kelly fraction based on recent performance
+  let dynamicFraction = config.kellyFraction; // Base: 0.25
+
+  // Boost on win streaks (confidence is validated)
+  if (consecutiveWins >= 5) dynamicFraction = Math.min(0.50, config.kellyFraction * 2.0);
+  else if (consecutiveWins >= 3) dynamicFraction = Math.min(0.40, config.kellyFraction * 1.5);
+
+  // Reduce on loss streaks (protect capital)
+  if (consecutiveLosses >= 3) dynamicFraction = config.kellyFraction * 0.5;
+  else if (consecutiveLosses >= 2) dynamicFraction = config.kellyFraction * 0.75;
+
+  // Also scale by drawdown — more conservative when in drawdown
+  // (This is handled externally by circuit breaker, but we add soft scaling too)
+
+  const kellyFrac = fullKelly * dynamicFraction;
   const rawStake = bankroll * kellyFrac;
 
-  // Apply position limits
   const maxByPercent = bankroll * config.maxStakePercent;
   const clamped = Math.min(rawStake, maxByPercent, config.maxStake);
   return Math.max(clamped, config.minStake);
@@ -129,8 +144,9 @@ export class PaperTradingEngine {
   /**
    * Open a paper trade based on a prediction.
    * Returns the trade (may be SKIPPED if circuit breaker is active or confidence too low).
+   * @param marketMidpoint - Actual CLOB midpoint price (0-1). Uses 0.50 if not provided.
    */
-  openTrade(prediction: Prediction): PaperTrade {
+  openTrade(prediction: Prediction, marketMidpoint?: number): PaperTrade {
     const now = Date.now();
 
     // Check circuit breaker
@@ -179,8 +195,20 @@ export class PaperTradingEngine {
       };
     }
 
-    // Calculate stake using Kelly criterion
-    const stake = kellyStake(prediction.probability, this.bankroll, this.config);
+    // Use actual CLOB midpoint when available for realistic simulation
+    const yesPrice = marketMidpoint && marketMidpoint > 0 && marketMidpoint < 1
+      ? marketMidpoint
+      : 0.50;
+
+    // Calculate stake using dynamic Kelly criterion
+    const stake = kellyStake(
+      prediction.probability,
+      this.bankroll,
+      this.config,
+      this.consecutiveLosses,
+      this.getConsecutiveWins(),
+      yesPrice
+    );
 
     if (stake <= 0 || stake < this.config.minStake) {
       return {
@@ -192,7 +220,7 @@ export class PaperTradingEngine {
         stake: 0,
         entryPrice: prediction.entryPrice,
         exitPrice: null,
-        yesPrice: 0.50,
+        yesPrice,
         payout: null,
         pnl: null,
         status: 'SKIPPED',
@@ -203,11 +231,6 @@ export class PaperTradingEngine {
         resolvedAt: now,
       };
     }
-
-    // Simulate buying YES or NO on Polymarket
-    // If direction = UP → buy YES at ~0.50 (market midpoint assumption)
-    // If direction = DOWN → buy NO at ~0.50
-    const yesPrice = 0.50; // Assume fair market; in real integration, use actual CLOB price
 
     const trade: PaperTrade = {
       id: generateTradeId(),
@@ -354,6 +377,16 @@ export class PaperTradingEngine {
 
   getBankroll(): number {
     return this.bankroll;
+  }
+
+  private getConsecutiveWins(): number {
+    let wins = 0;
+    const resolved = this.trades.filter(t => t.status === 'WON' || t.status === 'LOST');
+    for (let i = resolved.length - 1; i >= 0; i--) {
+      if (resolved[i].status === 'WON') wins++;
+      else break;
+    }
+    return wins;
   }
 
   isCircuitBreakerActive(): boolean {

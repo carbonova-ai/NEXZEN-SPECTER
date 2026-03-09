@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import type { EngineConfig } from '@/lib/types';
 import { useBinanceStream } from '@/hooks/useBinanceStream';
 import { usePolymarketData } from '@/hooks/usePolymarketData';
@@ -13,6 +13,7 @@ import { useAdaptiveEngine } from '@/hooks/useAdaptiveEngine';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useHealthMonitor } from '@/hooks/useHealthMonitor';
 import { useMarketSelector } from '@/hooks/useMarketSelector';
+import { useBtc5mMarket } from '@/hooks/useBtc5mMarket';
 // Phase 5 hooks
 import { useOrderBook } from '@/hooks/useOrderBook';
 import { useFundingRate } from '@/hooks/useFundingRate';
@@ -35,6 +36,7 @@ import { SignalHeatmap } from '@/components/dashboard/SignalHeatmap';
 import { RegimeTimeline } from '@/components/dashboard/RegimeTimeline';
 import { MarketSelector } from '@/components/dashboard/MarketSelector';
 import { IntelligencePanel } from '@/components/dashboard/IntelligencePanel';
+import { BeatPriceCard } from '@/components/dashboard/BeatPriceCard';
 import { FooterBar } from '@/components/dashboard/FooterBar';
 
 import { computeMLSignal } from '@/lib/signals/ml-ensemble';
@@ -62,11 +64,29 @@ export default function Dashboard() {
     chainlinkPrice
   );
 
+  // ── BTC 5-min market (lifted here so signal feeds prediction engine) ──
+  const { data: btc5mData, loading: btc5mLoading, error: btc5mError } = useBtc5mMarket();
+
+  // 5-min CLOB odds → most relevant polymarket signal: directly prices our exact outcome.
+  // Falls back to general BTC sentiment when the 5-min market isn't found yet.
+  const btc5mPolySignal = useMemo(() => {
+    const up = btc5mData?.odds?.up;
+    const down = btc5mData?.odds?.down;
+    if (up !== null && up !== undefined && down !== null && down !== undefined) {
+      // Normalize: up=0.5 → 0 (neutral), up=1.0 → +1 (all UP), up=0.0 → -1 (all DOWN)
+      return (up - 0.5) * 2;
+    }
+    return sentimentScore; // Fallback to general BTC sentiment
+  }, [btc5mData?.odds?.up, btc5mData?.odds?.down, sentimentScore]);
+
   // ── Phase 5: Intelligence Signals ──
 
-  // 5a. Order Book Intelligence — CLOB depth + whale detection
+  // 5a. Order Book Intelligence — use the 5-min market UP token (the asset we're actually betting).
+  // Falls back to first general BTC market token when 5-min market isn't available.
+  const btc5mUpTokenId = btc5mData?.market?.upTokenId ?? null;
   const firstTokenId = markets?.[0]?.clobTokenIds?.[0] ?? null;
-  const { analysis: orderBookAnalysis, signal: orderBookSignal } = useOrderBook(firstTokenId);
+  const orderBookTokenId = btc5mUpTokenId ?? firstTokenId;
+  const { analysis: orderBookAnalysis, signal: orderBookSignal } = useOrderBook(orderBookTokenId);
 
   // 5b. Funding Rate — Binance perpetual contrarian signal
   const { analysis: fundingRateAnalysis, signal: fundingRateSignal } = useFundingRate();
@@ -80,7 +100,13 @@ export default function Dashboard() {
   // Adaptive config state bridge
   const [adaptiveConfigState, setAdaptiveConfigState] = useState<EngineConfig | null>(null);
 
-  // 5. Prediction engine with all signals
+  // 5e. ML Ensemble — uses FEEDBACK from previous cycle (solves circular dependency)
+  // Instead of passing null, the ML signal from the previous prediction cycle
+  // feeds into the current one. This gives the meta-learner actual influence.
+  const [mlFeedbackSignal, setMlFeedbackSignal] = useState<number | null>(null);
+  const mlTrainedCountRef = useRef(0);
+
+  // 5. Prediction engine with all signals (ML now receives real feedback signal)
   const {
     currentPrediction,
     history,
@@ -89,7 +115,7 @@ export default function Dashboard() {
   } = usePredictionEngine(
     candles,
     tradePrice ?? ticker?.price ?? null,
-    sentimentScore,
+    btc5mPolySignal, // 5-min CLOB odds — directly prices the outcome we predict
     edgeSignal,
     chainlinkPrice?.price ?? null,
     adaptiveConfigState,
@@ -98,15 +124,28 @@ export default function Dashboard() {
       fundingRate: fundingRateSignal,
       onChain: onChainSignal,
       newsSentiment: newsSentimentSignal,
-      mlEnsemble: null, // Computed below after prediction engine runs
+      mlEnsemble: mlFeedbackSignal, // NOW FED FROM PREVIOUS CYCLE
     }
   );
 
-  // 5e. ML Ensemble — meta-learner (runs after prediction engine has signals)
+  // Train ML on each new prediction and update feedback signal for next cycle
   const mlResult = useMemo(() => {
     if (!currentPrediction?.signals) return null;
     return computeMLSignal(currentPrediction.signals, history);
   }, [currentPrediction?.signals, history]);
+
+  // Update ML feedback when new resolved predictions arrive
+  useEffect(() => {
+    const resolved = history.filter(p => p.outcome !== 'PENDING' && p.signals);
+    if (resolved.length <= mlTrainedCountRef.current) return;
+    mlTrainedCountRef.current = resolved.length;
+
+    const latest = resolved[resolved.length - 1];
+    const result = computeMLSignal(latest.signals, history);
+    if (result && result.signal !== 0) {
+      setMlFeedbackSignal(result.signal);
+    }
+  }, [history]);
 
   // 6. Adaptive engine
   const {
@@ -124,10 +163,13 @@ export default function Dashboard() {
     setAdaptiveConfigState(adaptiveConfig);
   }, [adaptiveConfig]);
 
-  // 7. Paper trading engine
+  // 7. Paper trading engine — now uses real CLOB midpoint for realistic simulation
+  const firstMidpoint = firstTokenId ? midpoints.get(firstTokenId) : null;
   const { stats: paperStats, lastTrade, resetCircuitBreaker } = usePaperTrading(
     currentPrediction,
-    history
+    history,
+    undefined,
+    firstMidpoint ?? null
   );
 
   // 8. Live trading engine
@@ -205,6 +247,19 @@ export default function Dashboard() {
             error={polyError}
           />
         </div>
+
+        {/* Beat Price Signal — Enhanced with momentum, VWAP, order flow */}
+        <BeatPriceCard
+          currentPrice={tradePrice ?? ticker?.price ?? null}
+          chainlinkDelta={delta?.currentDelta?.deltaPercent ?? null}
+          chainlinkPrice={chainlinkPrice?.price ?? null}
+          candles={candles}
+          fundingRateSignal={fundingRateSignal}
+          orderBookSignal={orderBookSignal}
+          polyData={btc5mData}
+          polyLoading={btc5mLoading}
+          polyError={btc5mError}
+        />
 
         {/* Chart */}
         <CandlestickChart candles={candles} predictions={history} />

@@ -13,8 +13,14 @@ const SIGNAL_KEYS = [
   { key: 'smaSignal', label: 'SMA' },
   { key: 'bollingerSignal', label: 'BOLL' },
   { key: 'volumeSignal', label: 'VOL' },
+  { key: 'vwapSignal', label: 'VWAP' },
   { key: 'polymarketSignal', label: 'POLY' },
   { key: 'chainlinkDeltaSignal', label: 'CHAIN' },
+  { key: 'orderBookSignal', label: 'OBOOK' },
+  { key: 'fundingRateSignal', label: 'FUND' },
+  { key: 'onChainSignal', label: 'WHALE' },
+  { key: 'newsSentimentSignal', label: 'NEWS' },
+  { key: 'mlEnsembleSignal', label: 'ML' },
 ] as const;
 
 interface SignalContribution {
@@ -54,7 +60,6 @@ export function SignalHeatmap({ history }: SignalHeatmapProps) {
 
     // Split into recent (last 30%) and overall
     const recentCutoff = Math.max(0, resolved.length - Math.ceil(resolved.length * 0.3));
-    const recent = resolved.slice(recentCutoff);
 
     return SIGNAL_KEYS.map(({ key, label }) => {
       let correct = 0;

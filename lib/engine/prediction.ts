@@ -14,6 +14,7 @@ import {
   interpretSMA,
   interpretBollinger,
   interpretVolume,
+  interpretVWAP,
 } from '@/lib/indicators';
 
 function generateId(): string {
@@ -47,6 +48,7 @@ function computeSignals(
     smaSignal: interpretSMA(candles),
     bollingerSignal: interpretBollinger(indicators.bollingerBands, currentPrice),
     volumeSignal: interpretVolume(indicators.volumeProfile, priceChange),
+    vwapSignal: interpretVWAP(indicators.vwap),
     polymarketSignal: ext.polymarketSentiment ?? 0,
     chainlinkDeltaSignal: ext.chainlinkEdgeSignal ?? 0,
     orderBookSignal: ext.orderBookSignal ?? 0,
@@ -65,6 +67,7 @@ const SIGNAL_WEIGHT_MAP: { key: keyof EngineConfig['weights']; field: keyof Sign
   { key: 'sma', field: 'smaSignal' },
   { key: 'bollinger', field: 'bollingerSignal' },
   { key: 'volume', field: 'volumeSignal' },
+  { key: 'vwap', field: 'vwapSignal' },
   { key: 'polymarket', field: 'polymarketSignal' },
   { key: 'chainlinkDelta', field: 'chainlinkDeltaSignal' },
   { key: 'orderBook', field: 'orderBookSignal' },
@@ -106,7 +109,11 @@ function computeWeightedScore(
   return score;
 }
 
-function computeConfidence(signals: SignalBreakdown, unavailableSignals: Set<string>): ConfidenceLevel {
+function computeConfidence(
+  signals: SignalBreakdown,
+  unavailableSignals: Set<string>,
+  indicators: IndicatorValues
+): ConfidenceLevel {
   const allSignals: number[] = [];
   for (const { key, field } of SIGNAL_WEIGHT_MAP) {
     if (!unavailableSignals.has(key)) {
@@ -129,7 +136,32 @@ function computeConfidence(signals: SignalBreakdown, unavailableSignals: Set<str
   }, 0) / nonZero.length;
   const conflictPenalty = Math.min(0.3, variance * 0.5);
 
-  const effectiveAgreement = Math.max(0, agreement - conflictPenalty);
+  let effectiveAgreement = Math.max(0, agreement - conflictPenalty);
+
+  // ── VOLATILITY ADJUSTMENT ──
+  // In volatile markets, require stronger agreement for HIGH confidence
+  // Bollinger Band width is a good volatility proxy
+  if (indicators.bollingerBands) {
+    const bbWidth = indicators.bollingerBands.width;
+    if (bbWidth > 2.0) {
+      // Very volatile: tighten thresholds (harder to get HIGH)
+      effectiveAgreement *= 0.85;
+    } else if (bbWidth < 0.8) {
+      // Low volatility squeeze: signals are more reliable
+      effectiveAgreement *= 1.1;
+    }
+  }
+
+  // ── VWAP MEAN-REVERSION PENALTY ──
+  // If VWAP shows extreme extension, reduce confidence (snap-back likely)
+  if (indicators.vwap?.isMeanReversion) {
+    effectiveAgreement *= 0.9;
+  }
+
+  // ── SIGNAL COUNT BONUS ──
+  // More agreeing signals = higher conviction
+  const activeSignalBonus = nonZero.length >= 8 ? 0.05 : nonZero.length >= 6 ? 0.02 : 0;
+  effectiveAgreement += activeSignalBonus;
 
   if (effectiveAgreement >= 0.65 && nonZero.length >= 4) return 'HIGH';
   if (effectiveAgreement >= 0.45 && nonZero.length >= 3) return 'MED';
@@ -158,6 +190,12 @@ function buildReasoning(signals: SignalBreakdown, indicators: IndicatorValues): 
   }
 
   if (indicators.volumeProfile?.isAnomaly) reasons.push('Volume anomaly detected');
+
+  if (indicators.vwap) {
+    if (signals.vwapSignal > 0.3) reasons.push(`Price above VWAP (institutional buying, dev ${(indicators.vwap.deviation * 100).toFixed(2)}%)`);
+    else if (signals.vwapSignal < -0.3) reasons.push(`Price below VWAP (institutional selling, dev ${(indicators.vwap.deviation * 100).toFixed(2)}%)`);
+    if (indicators.vwap.isMeanReversion) reasons.push('VWAP mean-reversion zone — extended move');
+  }
 
   if (signals.polymarketSignal > 0.3) reasons.push('Polymarket sentiment bullish');
   else if (signals.polymarketSignal < -0.3) reasons.push('Polymarket sentiment bearish');
@@ -234,7 +272,7 @@ export function generatePrediction(
 
   const direction = aggregateScore >= 0 ? 'UP' : 'DOWN';
   const probability = Math.min(0.95, 0.5 + Math.abs(aggregateScore) * 0.45);
-  const confidence = computeConfidence(signals, unavailable);
+  const confidence = computeConfidence(signals, unavailable, indicators);
   const reasoning = buildReasoning(signals, indicators);
 
   const movePercent = aggregateScore * 0.005; // 0.5% base move — crypto needs to overcome spread costs

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s --max-time 15 \"https://gamma-api.polymarket.com/events?tag_id=21&closed=false&active=true&limit=3\")",
+      "Bash(curl -s --max-time 10 \"https://gamma-api.polymarket.com/markets?closed=false&active=true&limit=2\")",
+      "Bash(curl -s --max-time 30 \"http://localhost:3000\")"
+    ]
+  }
+}

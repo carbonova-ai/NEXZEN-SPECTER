@@ -14,9 +14,10 @@ import {
 } from '@/lib/engine/weight-optimizer';
 import { AlertEngine, type Alert } from '@/lib/engine/alerts';
 
-// Re-optimize every 10 minutes (or after N new predictions)
-const OPTIMIZE_INTERVAL_MS = 600_000;
-const OPTIMIZE_EVERY_N_PREDICTIONS = 5;
+// Re-optimize every 5 minutes (faster adaptation to regime shifts)
+// and after every 3 new predictions (more responsive to market changes)
+const OPTIMIZE_INTERVAL_MS = 300_000;
+const OPTIMIZE_EVERY_N_PREDICTIONS = 3;
 
 export function useAdaptiveEngine(
   history: PredictionResult[],
@@ -78,7 +79,9 @@ export function useAdaptiveEngine(
     const resolvedCount = history.filter(p => p.outcome !== 'PENDING').length;
     if (resolvedCount - lastOptimizeCountRef.current >= OPTIMIZE_EVERY_N_PREDICTIONS) {
       lastOptimizeCountRef.current = resolvedCount;
-      runOptimization();
+      // Defer to avoid synchronous setState cascade
+      const timeout = setTimeout(runOptimization, 0);
+      return () => clearTimeout(timeout);
     }
   }, [history, runOptimization]);
 

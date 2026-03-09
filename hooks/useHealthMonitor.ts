@@ -18,8 +18,14 @@ export function useHealthMonitor(
   binanceLatency: number,
   predictionCycles: number
 ) {
-  const monitorRef = useRef(new HealthMonitor());
-  const [health, setHealth] = useState<HealthSnapshot>(() => monitorRef.current.getSnapshot());
+  const monitorRef = useRef<HealthMonitor>(null!);
+  if (monitorRef.current === null) {
+    monitorRef.current = new HealthMonitor();
+  }
+  const [health, setHealth] = useState<HealthSnapshot>(() => {
+    const m = new HealthMonitor();
+    return m.getSnapshot();
+  });
 
   // Record heartbeats when statuses change
   useEffect(() => {

@@ -23,7 +23,7 @@ const STORAGE_KEY = 'nexzen_ml_weights';
 // Feature names (signals + cross-interactions)
 const BASE_FEATURES = [
   'rsiSignal', 'macdSignal', 'smaSignal', 'bollingerSignal',
-  'volumeSignal', 'polymarketSignal', 'chainlinkDeltaSignal',
+  'volumeSignal', 'vwapSignal', 'polymarketSignal', 'chainlinkDeltaSignal',
   'orderBookSignal', 'fundingRateSignal', 'onChainSignal', 'newsSentimentSignal',
 ] as const;
 
@@ -36,6 +36,8 @@ const CROSS_FEATURES = [
   ['orderBookSignal', 'fundingRateSignal'],     // Exchange flow + derivatives sentiment
   ['onChainSignal', 'newsSentimentSignal'],      // On-chain moves + news catalyst
   ['chainlinkDeltaSignal', 'orderBookSignal'],   // Oracle edge + CLOB depth
+  ['vwapSignal', 'volumeSignal'],       // VWAP + Volume = institutional flow strength
+  ['vwapSignal', 'bollingerSignal'],    // VWAP + Bollinger = mean-reversion + institutional level
 ] as const;
 
 const TOTAL_FEATURES = BASE_FEATURES.length + CROSS_FEATURES.length + 1; // +1 for bias

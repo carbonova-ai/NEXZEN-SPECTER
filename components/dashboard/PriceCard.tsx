@@ -16,14 +16,16 @@ export function PriceCard({ ticker, chainlinkPrice, chainlinkDelta }: PriceCardP
   useEffect(() => {
     if (!ticker) return;
     const prev = prevPriceRef.current;
-    if (prev !== null && prev !== ticker.price) {
-      setFlashClass(ticker.price > prev ? 'animate-flash-green' : 'animate-flash-red');
-      const timeout = setTimeout(() => setFlashClass(''), 300);
-      prevPriceRef.current = ticker.price;
-      return () => clearTimeout(timeout);
-    }
     prevPriceRef.current = ticker.price;
-  }, [ticker?.price, ticker]);
+    if (prev === null || prev === ticker.price) return;
+    const cls = ticker.price > prev ? 'animate-flash-green' : 'animate-flash-red';
+    // Defer setState to avoid synchronous cascade
+    const raf = requestAnimationFrame(() => {
+      setFlashClass(cls);
+    });
+    const timeout = setTimeout(() => setFlashClass(''), 300);
+    return () => { cancelAnimationFrame(raf); clearTimeout(timeout); };
+  }, [ticker]);
 
   if (!ticker) {
     return (

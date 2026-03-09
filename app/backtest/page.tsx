@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import type { WalkForwardResult } from '@/lib/backtest/walk-forward';
 import { formatMetric } from '@/lib/backtest/metrics';
 import {
@@ -52,9 +53,9 @@ export default function BacktestPage() {
               Validate adaptive weight optimization on historical data
             </p>
           </div>
-          <a href="/" className="text-xs text-nexzen-primary hover:underline">
+          <Link href="/" className="text-xs text-nexzen-primary hover:underline">
             ← Dashboard
-          </a>
+          </Link>
         </div>
 
         {/* Config Panel */}

@@ -12,8 +12,10 @@ import {
 } from '@/lib/websocket/binance';
 
 const MAX_CANDLES = 200;
-const TICKER_THROTTLE_MS = 100; // Max 10 ticker renders/sec — speed-critical for delta detection
-const CROSS_VALIDATION_TOLERANCE = 0.005; // 0.5% max divergence between aggTrade and ticker
+const TICKER_THROTTLE_MS = 100;
+const CROSS_VALIDATION_TOLERANCE = 0.005;
+const WS_DATA_TIMEOUT = 4000; // If no WS data in 4s, start REST fallback
+const REST_POLL_INTERVAL = 2000;
 
 export function useBinanceStream() {
   const [ticker, setTicker] = useState<TickerData | null>(null);
@@ -26,7 +28,7 @@ export function useBinanceStream() {
   const candlesRef = useRef<CandleData[]>([]);
   const initializedRef = useRef(false);
 
-  // RAF-batch refs: accumulate data, flush at screen refresh rate
+  // RAF-batch refs
   const tradePriceRef = useRef<number | null>(null);
   const latencyRef = useRef<number>(0);
   const tickerRef = useRef<TickerData | null>(null);
@@ -35,28 +37,29 @@ export function useBinanceStream() {
   const lastTickerRenderRef = useRef<number>(0);
   const integrityRef = useRef<'verified' | 'unverified' | 'divergent'>('unverified');
 
-  // RAF flush: sync refs → state at 60fps max
+  // Track whether WS is actually delivering data (not just connected)
+  const wsDataReceivedRef = useRef(false);
+  const restPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fullTickerLoadedRef = useRef(false);
+
+  // RAF flush
   useEffect(() => {
     function flush() {
       if (dirtyRef.current) {
         dirtyRef.current = false;
 
-        // Always flush trade price (highest priority, lowest latency)
         if (tradePriceRef.current !== null) {
           setTradePrice(tradePriceRef.current);
         }
 
-        // Throttle ticker renders
         const now = performance.now();
         if (tickerRef.current && now - lastTickerRenderRef.current > TICKER_THROTTLE_MS) {
           setTicker(tickerRef.current);
           lastTickerRenderRef.current = now;
         }
 
-        // Latency
         setLatency(latencyRef.current);
 
-        // Cross-validate aggTrade vs ticker (detect feed divergence)
         const tp = tradePriceRef.current;
         const tk = tickerRef.current?.price;
         if (tp && tk) {
@@ -96,9 +99,10 @@ export function useBinanceStream() {
     fetchHistory();
   }, []);
 
-  // Handle kline updates (low frequency ~every few seconds, no throttle needed)
+  // Handle kline updates
   const handleKline = useCallback((data: BinanceKlineMessage) => {
     if (!data.k) return;
+    wsDataReceivedRef.current = true;
 
     const parsed = parseKline(data);
 
@@ -135,26 +139,94 @@ export function useBinanceStream() {
     });
   }, []);
 
-  // Handle ticker — write to ref, RAF flushes to state
+  // Handle ticker
   const handleTicker = useCallback((data: BinanceTickerMessage) => {
     if (!data.c) return;
+    wsDataReceivedRef.current = true;
     tickerRef.current = parseTicker(data);
     dirtyRef.current = true;
   }, []);
 
-  // Handle aggTrade — write to ref, RAF flushes to state (zero-copy path)
+  // Handle aggTrade
   const handleTrade = useCallback((data: BinanceAggTradeMessage) => {
+    wsDataReceivedRef.current = true;
     tradePriceRef.current = parseFloat(data.p);
     dirtyRef.current = true;
   }, []);
 
-  // Handle latency — write to ref only
+  // Handle latency
   const handleLatency = useCallback((ms: number) => {
     latencyRef.current = ms;
     dirtyRef.current = true;
   }, []);
 
-  // Single combined WebSocket connection
+  // ── REST fallback ──
+
+  const startRestFallback = useCallback(() => {
+    if (restPollingRef.current) return;
+
+    async function pollFull() {
+      try {
+        const res = await fetch('/api/binance/ticker?symbol=BTCUSDT', {
+          signal: AbortSignal.timeout(4000),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.price) {
+          tickerRef.current = data;
+          tradePriceRef.current = data.price;
+          dirtyRef.current = true;
+          fullTickerLoadedRef.current = true;
+          setStatus('connected');
+        }
+      } catch { /* retry */ }
+    }
+
+    async function pollFast() {
+      try {
+        const res = await fetch('/api/binance/ticker?symbol=BTCUSDT&fast=1', {
+          signal: AbortSignal.timeout(2000),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.price) {
+          tradePriceRef.current = data.price;
+          if (tickerRef.current) {
+            tickerRef.current = { ...tickerRef.current, price: data.price, timestamp: data.timestamp };
+          }
+          dirtyRef.current = true;
+        }
+      } catch { /* retry */ }
+    }
+
+    pollFull();
+    let count = 0;
+    restPollingRef.current = setInterval(() => {
+      count++;
+      // If WS starts delivering data, stop REST
+      if (wsDataReceivedRef.current) {
+        if (restPollingRef.current) {
+          clearInterval(restPollingRef.current);
+          restPollingRef.current = null;
+        }
+        return;
+      }
+      if (!fullTickerLoadedRef.current || count % 15 === 0) {
+        pollFull();
+      } else {
+        pollFast();
+      }
+    }, REST_POLL_INTERVAL);
+  }, []);
+
+  const stopRestFallback = useCallback(() => {
+    if (restPollingRef.current) {
+      clearInterval(restPollingRef.current);
+      restPollingRef.current = null;
+    }
+  }, []);
+
+  // ── WebSocket + data watchdog ──
   useEffect(() => {
     const stream = createBinanceCombinedStream({
       onTicker: handleTicker,
@@ -166,10 +238,19 @@ export function useBinanceStream() {
 
     stream.connect();
 
+    // Watchdog: if no WS DATA (not just connection) in 4s, start REST
+    const watchdog = setTimeout(() => {
+      if (!wsDataReceivedRef.current) {
+        startRestFallback();
+      }
+    }, WS_DATA_TIMEOUT);
+
     return () => {
+      clearTimeout(watchdog);
+      stopRestFallback();
       stream.disconnect();
     };
-  }, [handleTicker, handleKline, handleTrade, handleLatency]);
+  }, [handleTicker, handleKline, handleTrade, handleLatency, startRestFallback, stopRestFallback]);
 
   return { ticker, candles, status, latency, tradePrice, priceIntegrity };
 }

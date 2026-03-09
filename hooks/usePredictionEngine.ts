@@ -67,7 +67,7 @@ export function usePredictionEngine(
   const [spikeDetected, setSpikeDetected] = useState(false);
 
   const currentPredictionRef = useRef<Prediction | null>(null);
-  const cycleStartRef = useRef<number>(Date.now());
+  const cycleStartRef = useRef<number>(0);
   const lastSpikeRef = useRef<number>(0);
   const lastPriceRef = useRef<number | null>(null);
 
@@ -78,12 +78,14 @@ export function usePredictionEngine(
   const edgeSignalRef = useRef(chainlinkEdgeSignal);
   const adaptiveConfigRef = useRef(adaptiveConfig);
   const phase5Ref = useRef(phase5Signals);
-  candlesRef.current = candles;
-  currentPriceRef.current = currentPrice;
-  sentimentRef.current = polymarketSentiment;
-  phase5Ref.current = phase5Signals;
-  edgeSignalRef.current = chainlinkEdgeSignal;
-  adaptiveConfigRef.current = adaptiveConfig;
+  useEffect(() => {
+    candlesRef.current = candles;
+    currentPriceRef.current = currentPrice;
+    sentimentRef.current = polymarketSentiment;
+    phase5Ref.current = phase5Signals;
+    edgeSignalRef.current = chainlinkEdgeSignal;
+    adaptiveConfigRef.current = adaptiveConfig;
+  });
 
   // Load history from Supabase on mount
   useEffect(() => {
@@ -105,7 +107,7 @@ export function usePredictionEngine(
   }, []);
 
   const chainlinkPriceRef = useRef<number | null>(null);
-  chainlinkPriceRef.current = chainlinkPrice;
+  useEffect(() => { chainlinkPriceRef.current = chainlinkPrice; }, [chainlinkPrice]);
 
   const resolvePrevious = useCallback((price: number) => {
     const prevPrediction = currentPredictionRef.current;
@@ -192,7 +194,8 @@ export function usePredictionEngine(
       currentPredictionRef.current // Only if we have an active prediction
     ) {
       lastSpikeRef.current = now;
-      runCycle(true);
+      const timeout = setTimeout(() => runCycle(true), 0);
+      return () => clearTimeout(timeout);
     }
   }, [currentPrice, runCycle]);
 
@@ -202,7 +205,8 @@ export function usePredictionEngine(
     if (initialRanRef.current) return;
     if (candles.length >= 50 && currentPrice && !currentPredictionRef.current) {
       initialRanRef.current = true;
-      runCycle();
+      const timeout = setTimeout(() => runCycle(), 0);
+      return () => clearTimeout(timeout);
     }
   }, [candles.length, currentPrice, runCycle]);
 
@@ -214,6 +218,7 @@ export function usePredictionEngine(
 
   // Countdown timer
   useEffect(() => {
+    if (cycleStartRef.current === 0) cycleStartRef.current = Date.now();
     const timer = setInterval(() => {
       const elapsed = Date.now() - cycleStartRef.current;
       const remaining = Math.max(0, Math.ceil((CYCLE_MS - elapsed) / 1000));

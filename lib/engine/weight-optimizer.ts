@@ -23,16 +23,16 @@ import { PredictionResult, EngineConfig, DEFAULT_ENGINE_CONFIG } from '@/lib/typ
 
 // ── Configuration ──
 
-const MIN_SAMPLES = 50;         // Need at least 50 resolved predictions (20 was noise)
+const MIN_SAMPLES = 30;         // Reduced from 50 — start adapting sooner
 const MAX_SAMPLES = 300;        // Use last 300 predictions for optimization
-const DECAY_FACTOR = 0.99;      // Gentler decay — crypto regimes last days, not hours
-const LEARNING_RATE = 0.3;      // How fast to adapt (0 = static, 1 = fully adaptive)
+const DECAY_FACTOR = 0.985;     // Slightly faster decay — react quicker to regime shifts
+const LEARNING_RATE = 0.35;     // Slightly more aggressive adaptation
 const MIN_WEIGHT = 0.03;        // Minimum 3% weight per signal
 const MAX_WEIGHT = 0.35;        // Maximum 35% weight per signal
 
 // Signal keys matching EngineConfig.weights
 const SIGNAL_KEYS = [
-  'rsi', 'macd', 'sma', 'bollinger', 'volume', 'polymarket', 'chainlinkDelta',
+  'rsi', 'macd', 'sma', 'bollinger', 'volume', 'vwap', 'polymarket', 'chainlinkDelta',
   'orderBook', 'fundingRate', 'onChain', 'newsSentiment', 'mlEnsemble',
 ] as const;
 type SignalKey = typeof SIGNAL_KEYS[number];
@@ -44,6 +44,7 @@ const SIGNAL_FIELD_MAP: Record<SignalKey, string> = {
   sma: 'smaSignal',
   bollinger: 'bollingerSignal',
   volume: 'volumeSignal',
+  vwap: 'vwapSignal',
   polymarket: 'polymarketSignal',
   chainlinkDelta: 'chainlinkDeltaSignal',
   orderBook: 'orderBookSignal',
@@ -123,23 +124,23 @@ function getRegimeWeights(regime: MarketRegime): EngineConfig['weights'] {
     case 'TRENDING_UP':
     case 'TRENDING_DOWN':
       return {
-        rsi: 0.05, macd: 0.15, sma: 0.12, bollinger: 0.05, volume: 0.06,
-        polymarket: 0.10, chainlinkDelta: 0.14,
-        orderBook: 0.10, fundingRate: 0.06, onChain: 0.05, newsSentiment: 0.04, mlEnsemble: 0.08,
+        rsi: 0.05, macd: 0.13, sma: 0.10, bollinger: 0.04, volume: 0.05, vwap: 0.09,
+        polymarket: 0.08, chainlinkDelta: 0.14,
+        orderBook: 0.10, fundingRate: 0.05, onChain: 0.05, newsSentiment: 0.04, mlEnsemble: 0.08,
       };
 
     case 'VOLATILE':
       return {
-        rsi: 0.10, macd: 0.06, sma: 0.05, bollinger: 0.12, volume: 0.05,
-        polymarket: 0.10, chainlinkDelta: 0.17,
-        orderBook: 0.12, fundingRate: 0.07, onChain: 0.04, newsSentiment: 0.04, mlEnsemble: 0.08,
+        rsi: 0.09, macd: 0.05, sma: 0.04, bollinger: 0.10, volume: 0.05, vwap: 0.10,
+        polymarket: 0.08, chainlinkDelta: 0.16,
+        orderBook: 0.11, fundingRate: 0.06, onChain: 0.04, newsSentiment: 0.04, mlEnsemble: 0.08,
       };
 
     case 'RANGING':
       return {
-        rsi: 0.12, macd: 0.06, sma: 0.06, bollinger: 0.12, volume: 0.04,
-        polymarket: 0.12, chainlinkDelta: 0.14,
-        orderBook: 0.10, fundingRate: 0.05, onChain: 0.05, newsSentiment: 0.05, mlEnsemble: 0.09,
+        rsi: 0.10, macd: 0.05, sma: 0.05, bollinger: 0.10, volume: 0.04, vwap: 0.10,
+        polymarket: 0.10, chainlinkDelta: 0.13,
+        orderBook: 0.10, fundingRate: 0.05, onChain: 0.05, newsSentiment: 0.04, mlEnsemble: 0.09,
       };
 
     default:

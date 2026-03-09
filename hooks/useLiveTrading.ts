@@ -57,12 +57,12 @@ export function useLiveTrading(
   const lastPredictionIdRef = useRef<string | null>(null);
   const marketsRef = useRef(markets);
   const midpointsRef = useRef(midpoints);
-  marketsRef.current = markets;
-  midpointsRef.current = midpoints;
+  useEffect(() => { marketsRef.current = markets; }, [markets]);
+  useEffect(() => { midpointsRef.current = midpoints; }, [midpoints]);
 
   // Check if server is configured for live trading
   useEffect(() => {
-    fetch('/api/trade')
+    fetch('/api/trade', { signal: AbortSignal.timeout(5_000) })
       .then(res => res.json())
       .then(data => setConfigured(data.configured ?? false))
       .catch(() => setConfigured(false));
@@ -74,8 +74,12 @@ export function useLiveTrading(
     const enabled = loadEnabled();
     const engine = new LiveTradingEngine(config, savedTrades, enabled);
     engineRef.current = engine;
-    setTrades(engine.getTrades());
-    setStats(engine.getStats());
+    // Defer setState to avoid synchronous cascade
+    const timeout = setTimeout(() => {
+      setTrades(engine.getTrades());
+      setStats(engine.getStats());
+    }, 0);
+    return () => clearTimeout(timeout);
   }, [config]);
 
   // React to new predictions — execute trades
