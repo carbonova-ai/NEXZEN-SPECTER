@@ -99,44 +99,58 @@ export function useBinanceStream() {
     fetchHistory();
   }, []);
 
-  // Handle kline updates
+  // Handle kline updates — only trigger React state update on closed candles
+  // or significant price moves to avoid unnecessary re-renders
+  const lastKlineCloseRef = useRef<number>(0);
+
   const handleKline = useCallback((data: BinanceKlineMessage) => {
     if (!data.k) return;
     wsDataReceivedRef.current = true;
 
     const parsed = parseKline(data);
+    const ref = candlesRef.current;
+    const lastIndex = ref.length - 1;
 
-    setCandles(prev => {
-      const updated = [...prev];
-      const lastIndex = updated.length - 1;
+    if (lastIndex >= 0 && ref[lastIndex].timestamp === parsed.timestamp) {
+      // Update in-place on ref (no React re-render for intra-candle ticks)
+      ref[lastIndex] = {
+        open: parsed.open,
+        high: parsed.high,
+        low: parsed.low,
+        close: parsed.close,
+        volume: parsed.volume,
+        timestamp: parsed.timestamp,
+      };
 
-      if (lastIndex >= 0 && updated[lastIndex].timestamp === parsed.timestamp) {
-        updated[lastIndex] = {
-          open: parsed.open,
-          high: parsed.high,
-          low: parsed.low,
-          close: parsed.close,
-          volume: parsed.volume,
-          timestamp: parsed.timestamp,
-        };
-      } else if (parsed.isClosed || lastIndex < 0 || parsed.timestamp > updated[lastIndex].timestamp) {
-        updated.push({
-          open: parsed.open,
-          high: parsed.high,
-          low: parsed.low,
-          close: parsed.close,
-          volume: parsed.volume,
-          timestamp: parsed.timestamp,
-        });
+      // Only push React state update on closed candle or every 2s for live display
+      if (parsed.isClosed) {
+        lastKlineCloseRef.current = Date.now();
+        setCandles([...ref]);
+      } else {
+        const now = Date.now();
+        if (now - lastKlineCloseRef.current > 2000) {
+          lastKlineCloseRef.current = now;
+          setCandles([...ref]);
+        }
+      }
+    } else if (parsed.isClosed || lastIndex < 0 || parsed.timestamp > ref[lastIndex].timestamp) {
+      ref.push({
+        open: parsed.open,
+        high: parsed.high,
+        low: parsed.low,
+        close: parsed.close,
+        volume: parsed.volume,
+        timestamp: parsed.timestamp,
+      });
+
+      if (ref.length > MAX_CANDLES) {
+        ref.splice(0, ref.length - MAX_CANDLES);
       }
 
-      if (updated.length > MAX_CANDLES) {
-        updated.splice(0, updated.length - MAX_CANDLES);
-      }
-
-      candlesRef.current = updated;
-      return updated;
-    });
+      candlesRef.current = ref;
+      lastKlineCloseRef.current = Date.now();
+      setCandles([...ref]);
+    }
   }, []);
 
   // Handle ticker

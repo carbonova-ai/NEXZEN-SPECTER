@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import type { PredictionResult } from '@/lib/types';
 import { detectRegime, regimeLabel, regimeColor, type MarketRegime } from '@/lib/engine/weight-optimizer';
 
@@ -19,7 +19,7 @@ interface RegimeSegment {
   trades: number;
 }
 
-export function RegimeTimeline({ history }: RegimeTimelineProps) {
+export const RegimeTimeline = memo(function RegimeTimeline({ history }: RegimeTimelineProps) {
   const segments = useMemo((): RegimeSegment[] => {
     const resolved = history.filter(p => p.outcome !== 'PENDING');
     if (resolved.length < 10) return [];
@@ -164,4 +164,4 @@ export function RegimeTimeline({ history }: RegimeTimelineProps) {
       </div>
     </div>
   );
-}
+});

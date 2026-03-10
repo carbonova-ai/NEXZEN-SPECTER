@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import type { PredictionResult } from '@/lib/types';
 
 interface SignalHeatmapProps {
@@ -53,7 +53,7 @@ function trendColor(trend: number): string {
   return 'text-nexzen-muted';
 }
 
-export function SignalHeatmap({ history }: SignalHeatmapProps) {
+export const SignalHeatmap = memo(function SignalHeatmap({ history }: SignalHeatmapProps) {
   const contributions = useMemo((): SignalContribution[] => {
     const resolved = history.filter(p => p.outcome !== 'PENDING' && p.signals);
     if (resolved.length < 5) return [];
@@ -168,4 +168,4 @@ export function SignalHeatmap({ history }: SignalHeatmapProps) {
       </div>
     </div>
   );
-}
+});

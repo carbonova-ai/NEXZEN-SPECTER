@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import {
   AreaChart,
   Area,
@@ -24,7 +24,7 @@ interface EquityPoint {
   outcome: string;
 }
 
-export function EquityCurveChart({ history }: EquityCurveChartProps) {
+export const EquityCurveChart = memo(function EquityCurveChart({ history }: EquityCurveChartProps) {
   const data = useMemo(() => {
     const resolved = history.filter(p => p.outcome !== 'PENDING' && p.pnlPercent !== null);
     if (resolved.length === 0) return [];
@@ -130,4 +130,4 @@ export function EquityCurveChart({ history }: EquityCurveChartProps) {
       </div>
     </div>
   );
-}
+});

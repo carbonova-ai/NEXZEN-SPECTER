@@ -30,9 +30,11 @@ export function useChainlinkPrice(
     abortRef.current = controller;
 
     try {
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
       const res = await fetch('/api/chainlink/price', {
         signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));

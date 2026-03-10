@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { memo, useEffect, useRef } from 'react';
 import { CandleData, PredictionResult } from '@/lib/types';
 import {
   createChart,
@@ -22,7 +22,7 @@ function toChartTime(timestamp: number): Time {
   return (timestamp / 1000) as Time;
 }
 
-export function CandlestickChart({ candles, predictions }: CandlestickChartProps) {
+export const CandlestickChart = memo(function CandlestickChart({ candles, predictions }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -137,4 +137,4 @@ export function CandlestickChart({ candles, predictions }: CandlestickChartProps
       <div ref={containerRef} className="w-full h-[300px] md:h-[400px]" />
     </div>
   );
-}
+});

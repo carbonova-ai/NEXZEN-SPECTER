@@ -128,7 +128,7 @@ export function useBtc5mMarket() {
       if (!tokenId) return null;
       try {
         const res = await fetch(`/api/polymarket/clob/midpoint?token_id=${encodeURIComponent(tokenId)}`, {
-          signal: AbortSignal.timeout(4000),
+          signal: AbortSignal.timeout(3000),
         });
         if (!res.ok) return null;
         const data = await res.json();
@@ -179,12 +179,12 @@ export function useBtc5mMarket() {
         return;
       }
 
-      // Adaptive speed: faster in final minutes for maximum edge
-      // > 3min: 3s | 1-3min: 1.5s | < 1min: 800ms | < 15s: 500ms
-      const delay = remaining < 15_000 ? 500
-        : remaining < 60_000 ? 800
-        : remaining < 180_000 ? 1_500
-        : 3_000;
+      // Adaptive speed: faster near expiry, but capped to avoid request flooding
+      // > 3min: 5s | 1-3min: 3s | < 1min: 1.5s | < 15s: 1s
+      const delay = remaining < 15_000 ? 1_000
+        : remaining < 60_000 ? 1_500
+        : remaining < 180_000 ? 3_000
+        : 5_000;
 
       timeout = setTimeout(() => {
         if (new Date(market.endDate).getTime() > Date.now()) {

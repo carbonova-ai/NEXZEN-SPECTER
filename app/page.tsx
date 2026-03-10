@@ -134,14 +134,22 @@ export default function Dashboard() {
     return computeMLSignal(currentPrediction.signals, history);
   }, [currentPrediction?.signals, history]);
 
-  // Update ML feedback when new resolved predictions arrive
+  // Update ML feedback when new resolved predictions arrive — scan from end to avoid O(n) filter
   useEffect(() => {
-    const resolved = history.filter(p => p.outcome !== 'PENDING' && p.signals);
-    if (resolved.length <= mlTrainedCountRef.current) return;
-    mlTrainedCountRef.current = resolved.length;
+    // Find the latest resolved prediction from the end (avoids full array scan)
+    let resolvedCount = 0;
+    let latestResolved = null;
+    for (let i = history.length - 1; i >= 0; i--) {
+      const p = history[i];
+      if (p.outcome !== 'PENDING' && p.signals) {
+        resolvedCount++;
+        if (!latestResolved) latestResolved = p;
+      }
+    }
+    if (resolvedCount <= mlTrainedCountRef.current || !latestResolved) return;
+    mlTrainedCountRef.current = resolvedCount;
 
-    const latest = resolved[resolved.length - 1];
-    const result = computeMLSignal(latest.signals, history);
+    const result = computeMLSignal(latestResolved.signals, history);
     if (result && result.signal !== 0) {
       setMlFeedbackSignal(result.signal);
     }
@@ -225,6 +233,17 @@ export default function Dashboard() {
           onSelect={selectMarket}
         />
       </StatusBar>
+
+      {/* DEBUG PANEL — remove after diagnosing */}
+      <div className="bg-yellow-900/80 text-yellow-200 text-xs font-mono p-2 flex flex-wrap gap-4">
+        <span>candles: {candles.length}</span>
+        <span>price: {tradePrice ?? ticker?.price ?? 'NULL'}</span>
+        <span>binance: {binanceStatus}</span>
+        <span>prediction: {currentPrediction ? `${currentPrediction.direction} ${currentPrediction.confidence} (${currentPrediction.probability.toFixed(2)})` : 'NULL'}</span>
+        <span>nextIn: {nextPredictionIn}s</span>
+        <span>history: {history.length}</span>
+        <span>paperStats: {paperStats ? `trades=${paperStats.totalTrades} skip=${paperStats.skipped} cb=${paperStats.circuitBreakerActive}` : 'NULL'}</span>
+      </div>
 
       {/* Main Content */}
       <main className="flex-1 p-3 md:p-4 space-y-3 md:space-y-4 max-w-[1600px] mx-auto w-full">

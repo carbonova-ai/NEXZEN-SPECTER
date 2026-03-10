@@ -47,11 +47,11 @@ export function useHealthMonitor(
     }
   }, [predictionCycles]);
 
-  // Refresh snapshot every 2 seconds
+  // Refresh snapshot every 5 seconds (health changes slowly)
   useEffect(() => {
     const interval = setInterval(() => {
       setHealth(monitorRef.current.getSnapshot());
-    }, 2000);
+    }, 5_000);
     return () => clearInterval(interval);
   }, []);
 

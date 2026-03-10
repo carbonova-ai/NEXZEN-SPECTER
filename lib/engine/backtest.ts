@@ -1,60 +1,51 @@
 import { PredictionResult, PerformanceStats, EquityPoint } from '@/lib/types';
 
 export function calculatePerformance(results: PredictionResult[]): PerformanceStats {
-  const completed = results.filter(r => r.outcome !== 'PENDING');
-  const wins = completed.filter(r => r.outcome === 'WIN');
-  const losses = completed.filter(r => r.outcome === 'LOSS');
-
-  const winRate = completed.length > 0 ? wins.length / completed.length : 0;
-
-  // Equity curve: start at $100, $1 per trade
+  // Single-pass: equity curve, streaks, drawdown, win/loss counts — all in one loop
   const equityCurve: EquityPoint[] = [];
   let equity = 100;
-  for (const result of completed) {
-    const pnl = result.pnlPercent ?? 0;
-    equity += pnl; // $1 * pnl%
-    equityCurve.push({ timestamp: result.timestamp, equity });
-  }
-
-  // Streaks
-  let streakCurrent = 0;
-  let streakBest = 0;
-  let currentStreak = 0;
-
-  for (const result of completed) {
-    if (result.outcome === 'WIN') {
-      currentStreak++;
-      streakBest = Math.max(streakBest, currentStreak);
-    } else {
-      currentStreak = 0;
-    }
-  }
-  streakCurrent = currentStreak;
-
-  // Max drawdown
   let peak = 100;
   let maxDrawdown = 0;
-  let runningEquity = 100;
-  for (const result of completed) {
-    runningEquity += result.pnlPercent ?? 0;
-    peak = Math.max(peak, runningEquity);
-    const drawdown = ((peak - runningEquity) / peak) * 100;
-    maxDrawdown = Math.max(maxDrawdown, drawdown);
+  let winCount = 0;
+  let lossCount = 0;
+  let currentStreak = 0;
+  let streakBest = 0;
+  let confidenceSum = 0;
+
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    confidenceSum += r.probability;
+
+    if (r.outcome === 'PENDING') continue;
+
+    if (r.outcome === 'WIN') {
+      winCount++;
+      currentStreak++;
+      if (currentStreak > streakBest) streakBest = currentStreak;
+    } else {
+      lossCount++;
+      currentStreak = 0;
+    }
+
+    const pnl = r.pnlPercent ?? 0;
+    equity += pnl;
+    if (equity > peak) peak = equity;
+    const dd = ((peak - equity) / peak) * 100;
+    if (dd > maxDrawdown) maxDrawdown = dd;
+
+    equityCurve.push({ timestamp: r.timestamp, equity });
   }
 
-  // Average confidence (from all predictions, not just completed)
-  const avgConfidence = results.length > 0
-    ? results.reduce((sum, r) => sum + r.probability, 0) / results.length
-    : 0;
+  const completed = winCount + lossCount;
 
   return {
     totalPredictions: results.length,
-    wins: wins.length,
-    losses: losses.length,
-    winRate,
-    avgConfidence,
+    wins: winCount,
+    losses: lossCount,
+    winRate: completed > 0 ? winCount / completed : 0,
+    avgConfidence: results.length > 0 ? confidenceSum / results.length : 0,
     equityCurve,
-    streakCurrent,
+    streakCurrent: currentStreak,
     streakBest,
     maxDrawdown,
   };

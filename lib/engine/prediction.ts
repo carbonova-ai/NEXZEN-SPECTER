@@ -130,10 +130,8 @@ function computeConfidence(
   const agreement = totalMagnitude > 0 ? Math.abs(weightedDirection) / totalMagnitude : 0;
 
   // Signal conflict penalty: when signals strongly disagree, reduce confidence
-  const variance = nonZero.reduce((sum, s) => {
-    const mean = weightedDirection / nonZero.length;
-    return sum + (s - mean) ** 2;
-  }, 0) / nonZero.length;
+  const mean = weightedDirection / nonZero.length;
+  const variance = nonZero.reduce((sum, s) => sum + (s - mean) ** 2, 0) / nonZero.length;
   const conflictPenalty = Math.min(0.3, variance * 0.5);
 
   let effectiveAgreement = Math.max(0, agreement - conflictPenalty);
@@ -238,7 +236,7 @@ export function generatePrediction(
   newsSentimentSignal: number | null = null,
   mlEnsembleSignal: number | null = null,
 ): Prediction | null {
-  if (candles.length < 50) return null;
+  if (candles.length < 10) return null;
 
   const indicators = computeAllIndicators(candles);
 

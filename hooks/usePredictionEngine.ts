@@ -120,6 +120,7 @@ export function usePredictionEngine(
       chainlinkPriceRef.current
     );
 
+    // Fire-and-forget Supabase — don't block the cycle
     resolvePrediction(
       result.id,
       price,
@@ -129,7 +130,8 @@ export function usePredictionEngine(
 
     setHistory(prev => {
       const updated = [...prev, result];
-      saveHistory(updated);
+      // Defer persistence to next microtask — don't block state update
+      queueMicrotask(() => saveHistory(updated));
       const newPerformance = calculatePerformance(updated);
       setPerformance(newPerformance);
 
@@ -144,7 +146,7 @@ export function usePredictionEngine(
   const runCycle = useCallback((isSpike = false) => {
     const price = currentPriceRef.current;
     const cndls = candlesRef.current;
-    if (!price || cndls.length < 50) return;
+    if (!price || cndls.length < 10) return;
 
     setIsCalculating(true);
 
@@ -194,8 +196,7 @@ export function usePredictionEngine(
       currentPredictionRef.current // Only if we have an active prediction
     ) {
       lastSpikeRef.current = now;
-      const timeout = setTimeout(() => runCycle(true), 0);
-      return () => clearTimeout(timeout);
+      runCycle(true);
     }
   }, [currentPrice, runCycle]);
 
@@ -203,10 +204,9 @@ export function usePredictionEngine(
   const initialRanRef = useRef(false);
   useEffect(() => {
     if (initialRanRef.current) return;
-    if (candles.length >= 50 && currentPrice && !currentPredictionRef.current) {
+    if (candles.length >= 10 && currentPrice && !currentPredictionRef.current) {
       initialRanRef.current = true;
-      const timeout = setTimeout(() => runCycle(), 0);
-      return () => clearTimeout(timeout);
+      runCycle();
     }
   }, [candles.length, currentPrice, runCycle]);
 

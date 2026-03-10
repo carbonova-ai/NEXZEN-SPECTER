@@ -1,12 +1,13 @@
 'use client';
 
+import { memo } from 'react';
 import { PredictionResult } from '@/lib/types';
 
 interface SignalHistoryProps {
   history: PredictionResult[];
 }
 
-export function SignalHistory({ history }: SignalHistoryProps) {
+export const SignalHistory = memo(function SignalHistory({ history }: SignalHistoryProps) {
   const sorted = [...history].reverse().slice(0, 50);
 
   return (
@@ -70,4 +71,4 @@ export function SignalHistory({ history }: SignalHistoryProps) {
       )}
     </div>
   );
-}
+});
