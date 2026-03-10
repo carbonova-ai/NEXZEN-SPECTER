@@ -58,6 +58,9 @@ export function StatusBar({ binanceStatus, polymarketStatus, chainlinkStatus, po
 
       <div className="flex items-center gap-3">
         {children}
+        <a href="/geopolitical" className="text-[9px] text-amber-500/70 hover:text-amber-500 transition-colors font-bold">
+          GEO TRIBUNAL
+        </a>
         <a href="/backtest" className="text-[9px] text-nexzen-muted hover:text-nexzen-primary transition-colors">
           BACKTEST
         </a>
