@@ -37,10 +37,10 @@ export interface Alert {
 
 // ── Alert Thresholds ──
 
-const WIN_RATE_WARNING = 0.48;    // Below 48% → warning
-const WIN_RATE_CRITICAL = 0.42;   // Below 42% → critical
-const DRAWDOWN_WARNING = 0.10;    // 10% drawdown → warning
-const DRAWDOWN_CRITICAL = 0.15;   // 15% drawdown → critical
+const WIN_RATE_WARNING = 0.50;    // Below 50% → warning (break-even minus spread = losing money)
+const WIN_RATE_CRITICAL = 0.45;   // Below 45% → critical (edge clearly gone)
+const DRAWDOWN_WARNING = 0.15;    // 15% drawdown → warning ($15 loss from peak at $100)
+const DRAWDOWN_CRITICAL = 0.25;   // 25% drawdown → critical ($25 loss from peak)
 const WEIGHT_SHIFT_THRESHOLD = 0.05; // 5% weight change → info
 
 // Cooldowns to prevent alert spam (ms)

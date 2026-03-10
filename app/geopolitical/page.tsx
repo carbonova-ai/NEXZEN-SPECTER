@@ -34,16 +34,32 @@ function saveVerdicts(verdicts: TribunalResult[]) {
   } catch { /* quota exceeded, ignore */ }
 }
 
-// ── Browser Notification for CRITICAL events ──
+// ── Browser Notification for CRITICAL events (rate-limited) ──
+let lastCriticalNotifTime = 0;
+const CRITICAL_NOTIF_COOLDOWN_MS = 30_000; // Max 1 notification per 30s
+let pendingCriticalTitles: string[] = [];
+
 function sendCriticalNotification(article: GeoArticle) {
   if (typeof window === 'undefined') return;
   if (Notification.permission !== 'granted') return;
+
+  const now = Date.now();
+  pendingCriticalTitles.push(article.title);
+
+  // Rate limit: batch notifications within cooldown window
+  if (now - lastCriticalNotifTime < CRITICAL_NOTIF_COOLDOWN_MS) return;
+
+  lastCriticalNotifTime = now;
+  const titles = pendingCriticalTitles.splice(0);
+  const body = titles.length === 1
+    ? titles[0]
+    : `${titles.length} critical events detected`;
+
   try {
     new Notification('SPECTER GEO — CRITICAL', {
-      body: article.title,
+      body,
       icon: '/favicon.ico',
-      tag: `geo-critical-${article.id}`,
-      requireInteraction: true,
+      tag: 'geo-critical-batch', // Single tag = replaces previous notification
     });
   } catch { /* ignore */ }
 }

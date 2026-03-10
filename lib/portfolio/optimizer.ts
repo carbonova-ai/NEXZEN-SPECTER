@@ -39,10 +39,10 @@ export interface AllocationAdvice {
   reason: string;
 }
 
-// Configuration
-const MAX_TOTAL_EXPOSURE_PCT = 0.25; // Max 25% of bankroll across all positions
-const MAX_SINGLE_EXPOSURE_PCT = 0.10; // Max 10% per position
-const MAX_POSITIONS = 3;              // Max 3 concurrent positions
+// Configuration (calibrated for micro bankroll $100)
+const MAX_TOTAL_EXPOSURE_PCT = 0.20; // Max 20% of bankroll across all positions
+const MAX_SINGLE_EXPOSURE_PCT = 0.05; // Max 5% per position ($5 at $100)
+const MAX_POSITIONS = 2;              // Max 2 concurrent positions (effective cap: 2×$4=$8)
 const CORRELATION_PENALTY = 0.5;      // Reduce allocation if assets are correlated
 
 // Approximate correlations (BTC/ETH/SOL)

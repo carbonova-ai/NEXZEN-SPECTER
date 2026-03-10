@@ -12,6 +12,8 @@ import {
   DEFAULT_PAPER_TRADING_CONFIG,
 } from '@/lib/types';
 import type { PolymarketMarket, TradeResult } from '@/lib/polymarket/types';
+import { RuinGuard, DEFAULT_RUIN_GUARD_CONFIG } from '@/lib/engine/ruin-guard';
+import type { RuinGuardConfig } from '@/lib/engine/ruin-guard';
 
 // ── Live Trade Record ──
 
@@ -73,10 +75,10 @@ function kellyStake(
   const fullKelly = (b * p - q) / b;
   if (fullKelly <= 0) return 0;
 
-  // Dynamic fraction: reduce on loss streaks for live trading (extra conservative)
+  // Dynamic fraction: reduce on loss streaks for live trading (extra conservative for micro bankroll)
   let dynamicFraction = config.kellyFraction;
-  if (consecutiveLosses >= 3) dynamicFraction = config.kellyFraction * 0.4;
-  else if (consecutiveLosses >= 2) dynamicFraction = config.kellyFraction * 0.65;
+  if (consecutiveLosses >= 3) dynamicFraction = config.kellyFraction * 0.25;
+  else if (consecutiveLosses >= 2) dynamicFraction = config.kellyFraction * 0.6;
 
   const kellyFrac = fullKelly * dynamicFraction;
   const rawStake = bankroll * kellyFrac;
@@ -203,13 +205,16 @@ export class LiveTradingEngine {
   private consecutiveLosses: number;
   private circuitBreakerActive: boolean;
   private enabled: boolean;
+  private ruinGuard: RuinGuard;
 
   constructor(
     config: PaperTradingConfig = DEFAULT_PAPER_TRADING_CONFIG,
     existingTrades: LiveTrade[] = [],
-    enabled: boolean = false
+    enabled: boolean = false,
+    ruinGuardConfig: RuinGuardConfig = DEFAULT_RUIN_GUARD_CONFIG
   ) {
     this.config = config;
+    this.ruinGuard = new RuinGuard(ruinGuardConfig);
     this.trades = existingTrades;
     this.enabled = enabled;
 
@@ -246,6 +251,9 @@ export class LiveTradingEngine {
   }
 
   private checkCircuitBreaker(): boolean {
+    // Absolute floor — PERMANENT HALT at 60% loss (ruin threshold)
+    if (this.bankroll <= this.config.initialBankroll * 0.4) return true;
+
     const drawdown = (this.peakBankroll - this.bankroll) / this.peakBankroll;
     if (drawdown >= this.config.circuitBreakerDrawdown) return true;
     if (this.consecutiveLosses >= this.config.circuitBreakerLosses) return true;
@@ -271,6 +279,12 @@ export class LiveTradingEngine {
     // Check if enabled
     if (!this.enabled) {
       return this.createSkippedTrade(prediction, 'Live trading disabled', now);
+    }
+
+    // Check ruin guard (daily/hourly limits, cooldown, max trades/day, permanent halt)
+    const ruinCheck = this.ruinGuard.canTrade(this.bankroll);
+    if (!ruinCheck.allowed) {
+      return this.createSkippedTrade(prediction, `Ruin guard: ${ruinCheck.reason}`, now);
     }
 
     // Check circuit breaker
@@ -303,8 +317,11 @@ export class LiveTradingEngine {
     const livePrice = midpoints.get(tokenInfo.tokenId);
     const price = livePrice ?? tokenInfo.price;
 
+    // Use effective bankroll (reduced by profit lock if active)
+    const effectiveBankroll = this.ruinGuard.getEffectiveBankroll(this.bankroll);
+
     // Calculate stake with dynamic Kelly
-    const stake = kellyStake(prediction.probability, this.bankroll, this.config, this.consecutiveLosses, price);
+    const stake = kellyStake(prediction.probability, effectiveBankroll, this.config, this.consecutiveLosses, price);
     if (stake <= 0 || stake < this.config.minStake) {
       return this.createSkippedTrade(prediction, 'Kelly says no edge', now);
     }
@@ -390,6 +407,10 @@ export class LiveTradingEngine {
 
     trade.bankrollAfter = this.bankroll;
     trade.resolvedAt = Date.now();
+
+    // Record trade in ruin guard (tracks daily/hourly PnL, cooldown timer)
+    this.ruinGuard.recordTrade(trade.pnl ?? 0);
+
     this.peakBankroll = Math.max(this.peakBankroll, this.bankroll);
     this.circuitBreakerActive = this.checkCircuitBreaker();
 
@@ -453,5 +474,9 @@ export class LiveTradingEngine {
 
   getOpenTrade(): LiveTrade | null {
     return this.trades.find(t => t.status === 'FILLED' && t.pnl === null) ?? null;
+  }
+
+  getRuinGuard(): RuinGuard {
+    return this.ruinGuard;
   }
 }

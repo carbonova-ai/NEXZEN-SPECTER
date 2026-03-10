@@ -128,7 +128,7 @@ export function LiveTradingCard({
     );
   }
 
-  const pnl = stats.bankroll - 1000; // Assume $1000 initial
+  const pnl = stats.totalPnl;
   const isPositive = pnl >= 0;
 
   const handleToggle = () => {

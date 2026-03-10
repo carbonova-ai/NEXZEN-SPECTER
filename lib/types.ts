@@ -142,13 +142,13 @@ export interface PaperTradingConfig {
 }
 
 export const DEFAULT_PAPER_TRADING_CONFIG: PaperTradingConfig = {
-  initialBankroll: 1000,          // $1000 USDC starting
-  maxStakePercent: 0.05,          // 5% max per trade
-  kellyFraction: 0.25,            // Quarter-Kelly (conservative)
+  initialBankroll: 100,           // $100 USDC starting (micro bankroll)
+  maxStakePercent: 0.04,          // 4% max per trade ($4 at $100)
+  kellyFraction: 0.20,            // Fifth-Kelly (conservative for micro bankroll)
   minStake: 1,                    // $1 minimum
-  maxStake: 50,                   // $50 maximum
-  circuitBreakerDrawdown: 0.15,   // Stop at 15% drawdown
-  circuitBreakerLosses: 5,        // Stop after 5 consecutive losses
+  maxStake: 5,                    // $5 maximum (hard cap for $100 scale)
+  circuitBreakerDrawdown: 0.25,   // Stop at 25% drawdown ($25 loss from peak)
+  circuitBreakerLosses: 3,        // Stop after 3 consecutive losses
   spreadCost: 0.02,               // 2% spread cost
 };
 

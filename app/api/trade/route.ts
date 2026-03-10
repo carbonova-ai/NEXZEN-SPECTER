@@ -39,10 +39,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'stakeUsdc must be positive' }, { status: 400 });
     }
 
-    // Safety: max $100 per trade in Phase 2
-    if (stakeUsdc > 100) {
+    // Safety: max $10 per trade (micro bankroll $100 — hard server-side cap)
+    if (stakeUsdc > 10) {
       return NextResponse.json(
-        { error: 'Max trade size is $100 USDC (Phase 2 safety limit)' },
+        { error: 'Max trade size is $10 USDC (micro bankroll safety limit)' },
         { status: 400 }
       );
     }

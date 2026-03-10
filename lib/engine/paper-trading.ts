@@ -5,6 +5,8 @@ import {
   PaperTradingStats,
   DEFAULT_PAPER_TRADING_CONFIG,
 } from '@/lib/types';
+import { RuinGuard, DEFAULT_RUIN_GUARD_CONFIG } from '@/lib/engine/ruin-guard';
+import type { RuinGuardConfig } from '@/lib/engine/ruin-guard';
 
 // ── Dynamic Kelly Criterion Position Sizing ──
 
@@ -40,13 +42,12 @@ function kellyStake(
   // Dynamic Kelly fraction based on recent performance
   let dynamicFraction = config.kellyFraction; // Base: 0.25
 
-  // Boost on win streaks (confidence is validated)
-  if (consecutiveWins >= 5) dynamicFraction = Math.min(0.50, config.kellyFraction * 2.0);
-  else if (consecutiveWins >= 3) dynamicFraction = Math.min(0.40, config.kellyFraction * 1.5);
+  // Boost on win streaks (capped at 1.3× — small sample streaks are not statistically significant)
+  if (consecutiveWins >= 3) dynamicFraction = Math.min(0.26, config.kellyFraction * 1.3);
 
-  // Reduce on loss streaks (protect capital)
-  if (consecutiveLosses >= 3) dynamicFraction = config.kellyFraction * 0.5;
-  else if (consecutiveLosses >= 2) dynamicFraction = config.kellyFraction * 0.75;
+  // Reduce on loss streaks (aggressive capital preservation for micro bankroll)
+  if (consecutiveLosses >= 3) dynamicFraction = config.kellyFraction * 0.3;
+  else if (consecutiveLosses >= 2) dynamicFraction = config.kellyFraction * 0.6;
 
   // Also scale by drawdown — more conservative when in drawdown
   // (This is handled externally by circuit breaker, but we add soft scaling too)
@@ -76,12 +77,15 @@ export class PaperTradingEngine {
   private consecutiveLosses: number;
   private maxConsecutiveLosses: number;
   private circuitBreakerActive: boolean;
+  private ruinGuard: RuinGuard;
 
   constructor(
     config: PaperTradingConfig = DEFAULT_PAPER_TRADING_CONFIG,
-    existingTrades: PaperTrade[] = []
+    existingTrades: PaperTrade[] = [],
+    ruinGuardConfig: RuinGuardConfig = DEFAULT_RUIN_GUARD_CONFIG
   ) {
     this.config = config;
+    this.ruinGuard = new RuinGuard(ruinGuardConfig);
     this.trades = existingTrades;
 
     // Restore state from existing trades
@@ -131,7 +135,10 @@ export class PaperTradingEngine {
   }
 
   private checkCircuitBreaker(): boolean {
-    // Drawdown check
+    // Absolute floor — PERMANENT HALT at 60% loss (ruin threshold)
+    if (this.bankroll <= this.config.initialBankroll * 0.4) return true;
+
+    // Drawdown check from peak
     const drawdown = (this.peakBankroll - this.bankroll) / this.peakBankroll;
     if (drawdown >= this.config.circuitBreakerDrawdown) return true;
 
@@ -148,6 +155,30 @@ export class PaperTradingEngine {
    */
   openTrade(prediction: Prediction, marketMidpoint?: number): PaperTrade {
     const now = Date.now();
+
+    // Check ruin guard (daily/hourly limits, cooldown, max trades/day, permanent halt)
+    const ruinCheck = this.ruinGuard.canTrade(this.bankroll);
+    if (!ruinCheck.allowed) {
+      return {
+        id: generateTradeId(),
+        predictionId: prediction.id,
+        direction: prediction.direction,
+        confidence: prediction.confidence,
+        probability: prediction.probability,
+        stake: 0,
+        entryPrice: prediction.entryPrice,
+        exitPrice: null,
+        yesPrice: 0.50,
+        payout: null,
+        pnl: null,
+        status: 'SKIPPED',
+        skipReason: `Ruin guard: ${ruinCheck.reason}`,
+        bankrollBefore: this.bankroll,
+        bankrollAfter: this.bankroll,
+        timestamp: now,
+        resolvedAt: now,
+      };
+    }
 
     // Check circuit breaker
     if (this.circuitBreakerActive) {
@@ -200,10 +231,13 @@ export class PaperTradingEngine {
       ? marketMidpoint
       : 0.50;
 
+    // Use effective bankroll (reduced by profit lock if active)
+    const effectiveBankroll = this.ruinGuard.getEffectiveBankroll(this.bankroll);
+
     // Calculate stake using dynamic Kelly criterion
     const stake = kellyStake(
       prediction.probability,
-      this.bankroll,
+      effectiveBankroll,
       this.config,
       this.consecutiveLosses,
       this.getConsecutiveWins(),
@@ -299,6 +333,9 @@ export class PaperTradingEngine {
     trade.bankrollAfter = this.bankroll;
     trade.resolvedAt = now;
 
+    // Record trade in ruin guard (tracks daily/hourly PnL, cooldown timer)
+    this.ruinGuard.recordTrade(trade.pnl ?? 0);
+
     // Update peak and check circuit breaker
     this.peakBankroll = Math.max(this.peakBankroll, this.bankroll);
     this.circuitBreakerActive = this.checkCircuitBreaker();
@@ -391,5 +428,9 @@ export class PaperTradingEngine {
 
   isCircuitBreakerActive(): boolean {
     return this.circuitBreakerActive;
+  }
+
+  getRuinGuard(): RuinGuard {
+    return this.ruinGuard;
   }
 }
