@@ -15,6 +15,10 @@ interface GeoStatusBarProps {
   latencyMs: number;
   newArticleCount: number;
   polymarketCount: number;
+  // v3.0
+  threatSeverity?: string;
+  threatScore?: number;
+  correlationMomentum?: 'RISK_ON' | 'RISK_OFF' | 'MIXED';
 }
 
 const SOURCE_NAMES = ['Google', 'BBC', 'Guardian', 'Al Jazeera', 'France24', 'DW', 'NHK', 'CNBC', 'Sky', 'GDELT'];
@@ -31,6 +35,9 @@ export function GeoStatusBar({
   latencyMs,
   newArticleCount,
   polymarketCount,
+  threatSeverity,
+  threatScore,
+  correlationMomentum,
 }: GeoStatusBarProps) {
   const [time, setTime] = useState('');
 
@@ -58,7 +65,7 @@ export function GeoStatusBar({
             SP&#926;CT&#926;R GEO
           </h1>
         </Link>
-        <span className="text-[10px] text-nexzen-muted">TRIBUNAL v2.0</span>
+        <span className="text-[10px] text-nexzen-muted">TRIBUNAL v3.0</span>
       </div>
 
       <div className="flex items-center gap-4">
@@ -93,6 +100,32 @@ export function GeoStatusBar({
             );
           })}
         </div>
+
+        {/* Threat Level Badge */}
+        {threatSeverity && threatScore !== undefined && (
+          <span className={`text-[9px] font-black px-2 py-0.5 rounded border ${
+            threatSeverity === 'CRITICAL' ? 'text-red-400 bg-red-500/15 border-red-500/40 animate-pulse' :
+            threatSeverity === 'SEVERE' ? 'text-orange-400 bg-orange-500/10 border-orange-500/30' :
+            threatSeverity === 'HIGH' ? 'text-amber-400 bg-amber-500/10 border-amber-500/30' :
+            threatSeverity === 'ELEVATED' ? 'text-yellow-400 bg-yellow-500/5 border-yellow-500/20' :
+            'text-green-400 bg-green-500/5 border-green-500/20'
+          }`}>
+            {threatSeverity === 'CRITICAL' ? 'DEFCON 1' :
+             threatSeverity === 'SEVERE' ? 'DEFCON 2' :
+             threatSeverity === 'HIGH' ? 'DEFCON 3' :
+             threatSeverity === 'ELEVATED' ? 'DEFCON 4' : 'DEFCON 5'}
+            <span className="ml-1 text-[8px] opacity-70">{threatScore}</span>
+          </span>
+        )}
+
+        {/* Momentum */}
+        {correlationMomentum && correlationMomentum !== 'MIXED' && (
+          <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${
+            correlationMomentum === 'RISK_OFF' ? 'text-red-400 bg-red-500/10' : 'text-green-400 bg-green-500/10'
+          }`}>
+            {correlationMomentum === 'RISK_OFF' ? 'RISK OFF' : 'RISK ON'}
+          </span>
+        )}
 
         {/* Stats */}
         <div className="flex items-center gap-2">

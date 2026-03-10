@@ -95,8 +95,19 @@ function EventCard({
             </p>
           )}
 
+          {/* Tags */}
+          {article.tags && article.tags.length > 0 && (
+            <div className="flex flex-wrap gap-0.5 mt-1">
+              {article.tags.slice(0, 4).map(tag => (
+                <span key={tag} className="text-[6px] text-amber-400/60 bg-amber-500/5 px-1 py-0.5 rounded">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+
           {/* Meta */}
-          <div className="flex items-center gap-2 mt-1.5">
+          <div className="flex items-center gap-2 mt-1">
             <span className="text-[9px] text-nexzen-muted truncate max-w-[120px]">
               {article.source}
             </span>
@@ -104,6 +115,11 @@ function EventCard({
             <span className="text-[9px] text-nexzen-muted truncate max-w-[100px]">
               {article.domain}
             </span>
+            {article.snippetScore > 0 && (
+              <span className="text-[7px] text-cyan-400/50 tabular-nums" title="Snippet urgency score">
+                S:{article.snippetScore.toFixed(0)}
+              </span>
+            )}
             <span className={`text-[9px] tabular-nums ml-auto ${
               article.urgency === 'CRITICAL' ? 'text-red-400' : 'text-nexzen-muted'
             }`}>

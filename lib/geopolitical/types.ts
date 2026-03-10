@@ -15,6 +15,10 @@ export interface GeoArticle {
   domain: string;
   urgency: UrgencyLevel;
   urgencyScore: number; // 0-100 composite score for fine-grained sorting
+  // v3.0 fields
+  tags: string[]; // auto-extracted topic tags (e.g. "nuclear", "sanctions", "iran")
+  clusterId: string | null; // ID of the cluster this article belongs to
+  snippetScore: number; // urgency score from snippet analysis (separate from title)
 }
 
 export interface GeoNewsFeed {
@@ -24,6 +28,43 @@ export interface GeoNewsFeed {
   totalResults: number;
   sourcesHit: string[]; // which sources returned data
   latencyMs: number; // total fetch time
+  // v3.0 fields
+  threatLevel: ThreatLevel; // composite geopolitical threat level
+  sourcePerformance: SourcePerformance[]; // per-source metrics
+}
+
+// ── Threat Level (DEFCON-style) ──
+export type ThreatSeverity = 'STABLE' | 'ELEVATED' | 'HIGH' | 'SEVERE' | 'CRITICAL';
+
+export interface ThreatLevel {
+  severity: ThreatSeverity;
+  score: number; // 0-100 composite
+  dominantCategory: string; // which category is driving the threat
+  activeHotspots: string[]; // regions/topics with elevated activity
+  trend: 'escalating' | 'stable' | 'de-escalating';
+  summary: string; // one-line threat summary
+}
+
+// ── Source Performance ──
+export interface SourcePerformance {
+  id: string;
+  name: string;
+  responseTimeMs: number;
+  articlesDelivered: number;
+  wasHit: boolean;
+  tier: number;
+}
+
+// ── Article Cluster ──
+export interface ArticleCluster {
+  id: string;
+  label: string; // "Iran Nuclear Negotiations", "Ukraine Escalation"
+  tags: string[];
+  articleCount: number;
+  maxUrgency: UrgencyLevel;
+  avgUrgencyScore: number;
+  latestSeenAt: string;
+  articles: GeoArticle[];
 }
 
 export type TribunalVerdict = 'APORTAR' | 'NAO_APORTAR' | 'AGUARDAR';
@@ -111,47 +152,99 @@ const MEDIUM_KEYWORDS: [string, number][] = [
   ['ai regulation', 6], ['antitrust', 5],
 ];
 
-export function scoreUrgency(title: string): UrgencyLevel {
-  const lower = title.toLowerCase();
-  const score = computeUrgencyScore(lower);
-
+export function scoreUrgency(title: string, snippet?: string): UrgencyLevel {
+  const score = computeCompositeScore(title, snippet);
   if (score >= 14) return 'CRITICAL';
   if (score >= 8) return 'HIGH';
   if (score >= 4) return 'MEDIUM';
   return 'LOW';
 }
 
-export function computeUrgencyScore(lowerTitle: string): number {
+/** Score a single text string (title or snippet) */
+export function computeUrgencyScore(lowerText: string): number {
   let maxScore = 0;
   let totalBonus = 0;
   let matchCount = 0;
 
   for (const [kw, weight] of CRITICAL_KEYWORDS) {
-    if (lowerTitle.includes(kw)) {
+    if (lowerText.includes(kw)) {
       maxScore = Math.max(maxScore, weight);
       totalBonus += weight * 0.3;
       matchCount++;
     }
   }
   for (const [kw, weight] of HIGH_KEYWORDS) {
-    if (lowerTitle.includes(kw)) {
+    if (lowerText.includes(kw)) {
       maxScore = Math.max(maxScore, weight);
       totalBonus += weight * 0.2;
       matchCount++;
     }
   }
   for (const [kw, weight] of MEDIUM_KEYWORDS) {
-    if (lowerTitle.includes(kw)) {
+    if (lowerText.includes(kw)) {
       maxScore = Math.max(maxScore, weight);
       totalBonus += weight * 0.1;
       matchCount++;
     }
   }
 
-  // Multi-keyword bonus: articles matching multiple keywords are more important
   const multiBonus = matchCount > 1 ? Math.min(matchCount * 1.5, 6) : 0;
-
   return maxScore + multiBonus + Math.min(totalBonus, 8);
+}
+
+/** v3.0: Composite score combining title + snippet for better accuracy */
+export function computeCompositeScore(title: string, snippet?: string): number {
+  const titleScore = computeUrgencyScore(title.toLowerCase());
+  if (!snippet) return titleScore;
+
+  const snippetScore = computeUrgencyScore(snippet.toLowerCase());
+  // Title is primary (70%), snippet adds context (30%) — but snippet can elevate, not dominate
+  // If snippet reveals higher urgency, boost the title score
+  if (snippetScore > titleScore) {
+    return titleScore + (snippetScore - titleScore) * 0.4; // snippet can add up to 40% of the gap
+  }
+  return titleScore + snippetScore * 0.15; // snippet confirms = small boost
+}
+
+// ── Tag Extraction ──
+// Extract topic tags from title + snippet for clustering and display
+
+const TAG_PATTERNS: [RegExp, string][] = [
+  // Countries & regions
+  [/\b(iran|tehran|iranian)\b/i, 'iran'], [/\b(russia|moscow|kremlin|russian)\b/i, 'russia'],
+  [/\b(china|beijing|chinese)\b/i, 'china'], [/\b(ukraine|kyiv|ukrainian)\b/i, 'ukraine'],
+  [/\b(israel|jerusalem|israeli|idf)\b/i, 'israel'], [/\b(gaza|hamas|palestinian)\b/i, 'gaza'],
+  [/\b(taiwan|taipei|taiwanese)\b/i, 'taiwan'], [/\b(north korea|pyongyang|dprk)\b/i, 'north-korea'],
+  [/\b(syria|damascus|syrian)\b/i, 'syria'], [/\b(yemen|houthi)\b/i, 'yemen'],
+  [/\b(india|delhi|modi)\b/i, 'india'], [/\b(turkey|ankara|erdogan)\b/i, 'turkey'],
+  [/\b(saudi|riyadh|mbs)\b/i, 'saudi'], [/\b(eu|european union|brussels)\b/i, 'eu'],
+  // Topics
+  [/\b(nuclear|atomic|uranium|enrichment)\b/i, 'nuclear'],
+  [/\b(sanction|embargo|blacklist)\b/i, 'sanctions'],
+  [/\b(missile|icbm|rocket|hypersonic)\b/i, 'missiles'],
+  [/\b(oil|crude|brent|wti|opec)\b/i, 'oil'],
+  [/\b(bitcoin|btc|crypto|ethereum)\b/i, 'crypto'],
+  [/\b(election|vote|ballot|poll)\b/i, 'elections'],
+  [/\b(nato)\b/i, 'nato'], [/\b(un security|united nations)\b/i, 'un'],
+  [/\b(fed|federal reserve|ecb|boj)\b/i, 'central-banks'],
+  [/\b(inflation|cpi|deflation)\b/i, 'inflation'],
+  [/\b(recession|gdp contraction|downturn)\b/i, 'recession'],
+  [/\b(tariff|trade war|duties)\b/i, 'tariffs'],
+  [/\b(coup|uprising|revolution|protest)\b/i, 'instability'],
+  [/\b(ceasefire|peace talk|peace deal|negotiat)\b/i, 'peace-talks'],
+  [/\b(drone|uav)\b/i, 'drones'], [/\b(cyber|hack|ransomware)\b/i, 'cyber'],
+  [/\b(refugee|migration|asylum)\b/i, 'refugees'],
+  [/\b(ai|artificial intelligence)\b/i, 'ai'],
+  [/\b(semiconductor|chip)\b/i, 'chips'],
+];
+
+export function extractTags(title: string, snippet?: string): string[] {
+  const text = `${title} ${snippet || ''}`;
+  const tags = new Set<string>();
+  for (const [pattern, tag] of TAG_PATTERNS) {
+    if (pattern.test(text)) tags.add(tag);
+  }
+  return [...tags];
 }
 
 export const URGENCY_CONFIG: Record<UrgencyLevel, { label: string; color: string; bg: string; border: string; glow: string }> = {
@@ -159,6 +252,14 @@ export const URGENCY_CONFIG: Record<UrgencyLevel, { label: string; color: string
   HIGH: { label: 'HIGH', color: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/30', glow: 'shadow-orange-500/10' },
   MEDIUM: { label: 'MED', color: 'text-yellow-400', bg: 'bg-yellow-500/5', border: 'border-yellow-500/20', glow: '' },
   LOW: { label: 'LOW', color: 'text-nexzen-muted', bg: 'bg-nexzen-card/40', border: 'border-nexzen-border/30', glow: '' },
+};
+
+export const THREAT_CONFIG: Record<ThreatSeverity, { label: string; color: string; bg: string; border: string; icon: string }> = {
+  CRITICAL: { label: 'DEFCON 1', color: 'text-red-500', bg: 'bg-red-500/20', border: 'border-red-500/60', icon: '🔴' },
+  SEVERE:   { label: 'DEFCON 2', color: 'text-orange-500', bg: 'bg-orange-500/15', border: 'border-orange-500/50', icon: '🟠' },
+  HIGH:     { label: 'DEFCON 3', color: 'text-amber-500', bg: 'bg-amber-500/10', border: 'border-amber-500/40', icon: '🟡' },
+  ELEVATED: { label: 'DEFCON 4', color: 'text-yellow-400', bg: 'bg-yellow-500/5', border: 'border-yellow-500/30', icon: '🟢' },
+  STABLE:   { label: 'DEFCON 5', color: 'text-green-400', bg: 'bg-green-500/5', border: 'border-green-500/20', icon: '⬜' },
 };
 
 // ── Title Cleaning ──

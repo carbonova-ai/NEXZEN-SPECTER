@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { GeoArticle, GeoNewsFeed } from '@/lib/geopolitical/types';
+import type { GeoArticle, GeoNewsFeed, ThreatLevel, SourcePerformance } from '@/lib/geopolitical/types';
+import { clusterArticles } from '@/lib/geopolitical/clustering';
+import type { ArticleCluster } from '@/lib/geopolitical/types';
 
 interface UseGeoNewsOptions {
   query: string;
@@ -19,12 +21,17 @@ interface UseGeoNewsReturn {
   sources: string[];
   sourcesHit: string[];
   latencyMs: number;
-  newArticleCount: number; // articles added in last fetch
+  newArticleCount: number;
+  // v3.0
+  threatLevel: ThreatLevel | null;
+  sourcePerformance: SourcePerformance[];
+  clusters: ArticleCluster[];
+  criticalIds: Set<string>; // IDs of new CRITICAL articles (for notifications)
 }
 
 export function useGeoNews({
   query,
-  refreshInterval = 10_000, // 10s — ultra-aggressive, SWR cache handles server load
+  refreshInterval = 10_000,
 }: UseGeoNewsOptions): UseGeoNewsReturn {
   const [articles, setArticles] = useState<GeoArticle[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -36,6 +43,10 @@ export function useGeoNews({
   const [sourcesHit, setSourcesHit] = useState<string[]>([]);
   const [latencyMs, setLatencyMs] = useState(0);
   const [newArticleCount, setNewArticleCount] = useState(0);
+  const [threatLevel, setThreatLevel] = useState<ThreatLevel | null>(null);
+  const [sourcePerformance, setSourcePerformance] = useState<SourcePerformance[]>([]);
+  const [clusters, setClusters] = useState<ArticleCluster[]>([]);
+  const [criticalIds, setCriticalIds] = useState<Set<string>>(new Set());
 
   const queryRef = useRef(query);
   queryRef.current = query;
@@ -52,17 +63,22 @@ export function useGeoNews({
       setArticles(prev => {
         const existing = new Map(prev.map(a => [a.id, a]));
         let newCount = 0;
+        const newCriticals = new Set<string>();
 
         for (const a of data.articles) {
-          if (!existing.has(a.id)) newCount++;
+          if (!existing.has(a.id)) {
+            newCount++;
+            if (a.urgency === 'CRITICAL') newCriticals.add(a.id);
+          }
           existing.set(a.id, a);
         }
 
         setNewArticleCount(newCount);
+        if (newCriticals.size > 0) setCriticalIds(newCriticals);
 
         // Sort by urgency level first, then urgencyScore, then recency. Cap at 150
         const urgencyOrder = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
-        return [...existing.values()]
+        const sorted = [...existing.values()]
           .sort((a, b) => {
             const urgDiff = urgencyOrder[a.urgency] - urgencyOrder[b.urgency];
             if (urgDiff !== 0) return urgDiff;
@@ -71,6 +87,11 @@ export function useGeoNews({
             return new Date(b.seenAt).getTime() - new Date(a.seenAt).getTime();
           })
           .slice(0, 150);
+
+        // v3.0: Cluster articles
+        setClusters(clusterArticles(sorted));
+
+        return sorted;
       });
 
       setTotalResults(data.totalResults);
@@ -78,6 +99,10 @@ export function useGeoNews({
       setSourcesHit(data.sourcesHit || []);
       setLatencyMs(data.latencyMs || 0);
       setError(null);
+
+      // v3.0: Threat level + source performance
+      if (data.threatLevel) setThreatLevel(data.threatLevel);
+      if (data.sourcePerformance) setSourcePerformance(data.sourcePerformance);
 
       // Extract unique sources
       const uniqueSources = [...new Set(data.articles.map(a => a.source))];
@@ -126,5 +151,9 @@ export function useGeoNews({
     sourcesHit,
     latencyMs,
     newArticleCount,
+    threatLevel,
+    sourcePerformance,
+    clusters,
+    criticalIds,
   };
 }

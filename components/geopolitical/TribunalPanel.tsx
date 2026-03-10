@@ -481,7 +481,7 @@ export function TribunalPanel({
 
             <div>
               <div className="flex items-center justify-between mb-1">
-                <span className="text-[9px] text-nexzen-muted uppercase">Instrucoes do Projeto (v2.0 — Framework Institucional)</span>
+                <span className="text-[9px] text-nexzen-muted uppercase">Instrucoes do Projeto (v3.0 — Framework Institucional)</span>
                 <button
                   onClick={() => copyToClipboard(TRIBUNAL_PROJECT_INSTRUCTIONS, setSetupCopied)}
                   className={`px-2 py-0.5 text-[9px] rounded border transition-all ${
@@ -499,13 +499,16 @@ export function TribunalPanel({
             </div>
 
             <div className="bg-nexzen-surface/50 rounded p-3 border border-nexzen-border/10">
-              <h4 className="text-[10px] text-nexzen-text font-bold mb-1">Novidades v2.0</h4>
+              <h4 className="text-[10px] text-nexzen-text font-bold mb-1">Novidades v3.0</h4>
               <ul className="text-[9px] text-nexzen-muted space-y-1 list-disc list-inside leading-relaxed">
-                <li>Framework de analise multi-dimensional (fonte, impacto, precificacao, contagio)</li>
-                <li>Game theory e analise de incentivos</li>
-                <li>Dados Polymarket em tempo real incluidos nos prompts automaticamente</li>
-                <li>Campos adicionais: risco/retorno, catalisadores, tese contrarian</li>
-                <li>Criterios quantitativos de decisao (score thresholds)</li>
+                <li>DEFCON Threat Meter — nivel de ameaca geopolitica em tempo real</li>
+                <li>Smart Clustering — artigos agrupados em threads de historias</li>
+                <li>News x Markets Correlation — deteccao automatica de correlacao</li>
+                <li>Urgencia melhorada — analise de titulo + snippet combinados</li>
+                <li>Tags automaticas — extracao de topicos (paises, armas, economia)</li>
+                <li>Alertas de navegador para eventos CRITICAL</li>
+                <li>Performance de fontes — latencia e volume por fonte</li>
+                <li>Polymarket momentum — RISK ON/OFF baseado em correlacoes</li>
               </ul>
             </div>
 

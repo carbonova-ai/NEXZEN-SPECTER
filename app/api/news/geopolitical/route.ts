@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import type { GeoArticle, GeoNewsFeed } from '@/lib/geopolitical/types';
-import { scoreUrgency, computeUrgencyScore, cleanTitle } from '@/lib/geopolitical/types';
+import type { GeoArticle, GeoNewsFeed, SourcePerformance } from '@/lib/geopolitical/types';
+import { scoreUrgency, computeUrgencyScore, computeCompositeScore, cleanTitle, extractTags } from '@/lib/geopolitical/types';
+import { computeThreatLevel } from '@/lib/geopolitical/threat-level';
 
 // ══════════════════════════════════════════════════════════════
 // SPECTER GEO NEWS — Maximum Speed Architecture
@@ -153,12 +154,13 @@ function parseRSSItems(xml: string, sourceName: string, sourceCountry: string): 
     }
 
     const cleaned = cleanTitle(title);
-    const lower = cleaned.toLowerCase();
-    const urgencyScore = computeUrgencyScore(lower);
 
     const snippet = description
       ? description.slice(0, 200).replace(/\s+/g, ' ').trim()
       : '';
+
+    const snippetScore = snippet ? computeUrgencyScore(snippet.toLowerCase()) : 0;
+    const tags = extractTags(cleaned, snippet);
 
     const imageMatch = item.match(/<media:content[^>]*url="([^"]+)"/i)
       || item.match(/<enclosure[^>]*url="([^"]+)"/i)
@@ -175,8 +177,11 @@ function parseRSSItems(xml: string, sourceName: string, sourceCountry: string): 
       seenAt,
       imageUrl: imageMatch?.[1] || null,
       domain: extractDomain(link),
-      urgency: scoreUrgency(cleaned),
-      urgencyScore,
+      urgency: scoreUrgency(cleaned, snippet),
+      urgencyScore: computeCompositeScore(cleaned, snippet),
+      tags,
+      clusterId: null,
+      snippetScore,
     });
   }
 
@@ -210,38 +215,40 @@ function hashId(title: string, url: string): string {
 
 // ── Fetchers with tiered timeouts ──
 
-type FetchResult = { articles: GeoArticle[]; source: string };
+type FetchResult = { articles: GeoArticle[]; source: string; responseTimeMs: number };
 
 async function fetchGoogleNews(query: string, timeWindow: '1h' | '1d'): Promise<FetchResult> {
   const searchTerms = timeWindow === '1h'
     ? (CATEGORY_SEARCH[query] || `${query} when:1h`)
     : (CATEGORY_SEARCH_BROAD[query] || `${query} when:1d`);
   const url = getGoogleNewsURL(searchTerms);
+  const t0 = Date.now();
 
   try {
     const res = await fetch(url, {
-      signal: AbortSignal.timeout(3500), // 3.5s — Google is fast
+      signal: AbortSignal.timeout(3500),
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NewsBot/2.0)' },
     });
-    if (!res.ok) return { articles: [], source: '' };
+    if (!res.ok) return { articles: [], source: '', responseTimeMs: Date.now() - t0 };
     const xml = await res.text();
-    return { articles: parseRSSItems(xml, 'Google News', 'US'), source: `google_${timeWindow}` };
+    return { articles: parseRSSItems(xml, 'Google News', 'US'), source: `google_${timeWindow}`, responseTimeMs: Date.now() - t0 };
   } catch {
-    return { articles: [], source: '' };
+    return { articles: [], source: '', responseTimeMs: Date.now() - t0 };
   }
 }
 
 async function fetchWireFeed(source: RSSSource): Promise<FetchResult> {
-  const timeouts = { 1: 3000, 2: 4000, 3: 4500 }; // tier → timeout ms
+  const timeouts = { 1: 3000, 2: 4000, 3: 4500 };
+  const t0 = Date.now();
   try {
     const res = await fetch(source.url, {
       signal: AbortSignal.timeout(timeouts[source.tier]),
     });
-    if (!res.ok) return { articles: [], source: '' };
+    if (!res.ok) return { articles: [], source: '', responseTimeMs: Date.now() - t0 };
     const xml = await res.text();
-    return { articles: parseRSSItems(xml, source.name, source.country), source: source.id };
+    return { articles: parseRSSItems(xml, source.name, source.country), source: source.id, responseTimeMs: Date.now() - t0 };
   } catch {
-    return { articles: [], source: '' };
+    return { articles: [], source: '', responseTimeMs: Date.now() - t0 };
   }
 }
 
@@ -252,16 +259,17 @@ const GDELT_BASE = 'https://api.gdeltproject.org/api/v2/doc/doc';
 
 async function fetchGDELT(query: string): Promise<FetchResult> {
   const now = Date.now();
-  if (now - lastGdeltFetch < GDELT_COOLDOWN) return { articles: [], source: '' };
+  if (now - lastGdeltFetch < GDELT_COOLDOWN) return { articles: [], source: '', responseTimeMs: 0 };
 
   const gdeltQuery = `sourcelang:english (${query.split(' OR ').slice(0, 4).join(' OR ')})`;
   const url = `${GDELT_BASE}?query=${encodeURIComponent(gdeltQuery)}&mode=ArtList&maxrecords=30&format=json&sort=DateDesc&timespan=30min`;
+  const t0 = Date.now();
 
   try {
     lastGdeltFetch = now;
-    const res = await fetch(url, { signal: AbortSignal.timeout(5000) }); // 5s max
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
     const text = await res.text();
-    if (!text.startsWith('{')) return { articles: [], source: '' };
+    if (!text.startsWith('{')) return { articles: [], source: '', responseTimeMs: Date.now() - t0 };
 
     const data = JSON.parse(text);
     const articles: GeoArticle[] = [];
@@ -269,7 +277,7 @@ async function fetchGDELT(query: string): Promise<FetchResult> {
     for (const a of data.articles || []) {
       if (!a.title || !a.url) continue;
       const cleaned = cleanTitle(a.title);
-      const lower = cleaned.toLowerCase();
+      const tags = extractTags(cleaned);
       articles.push({
         id: hashId(cleaned, a.url),
         title: cleaned,
@@ -282,12 +290,15 @@ async function fetchGDELT(query: string): Promise<FetchResult> {
         imageUrl: a.socialimage || null,
         domain: a.domain || '',
         urgency: scoreUrgency(cleaned),
-        urgencyScore: computeUrgencyScore(lower),
+        urgencyScore: computeCompositeScore(cleaned),
+        tags,
+        clusterId: null,
+        snippetScore: 0,
       });
     }
-    return { articles, source: 'gdelt' };
+    return { articles, source: 'gdelt', responseTimeMs: Date.now() - t0 };
   } catch {
-    return { articles: [], source: '' };
+    return { articles: [], source: '', responseTimeMs: Date.now() - t0 };
   }
 }
 
@@ -304,7 +315,7 @@ function parseGDELTDate(seendate: string): string {
 
 // ── Race Pattern: return as soon as fast sources respond ──
 
-async function fetchAllWithRace(query: string): Promise<{ articles: GeoArticle[]; sourcesHit: string[] }> {
+async function fetchAllWithRace(query: string): Promise<{ articles: GeoArticle[]; sourcesHit: string[]; sourcePerformance: SourcePerformance[] }> {
   // Split sources into fast (critical path) and slow (supplementary)
   const tier1Feeds = WIRE_FEEDS.filter(f => f.tier === 1);
   const tier2Feeds = WIRE_FEEDS.filter(f => f.tier === 2);
@@ -339,21 +350,40 @@ async function fetchAllWithRace(query: string): Promise<{ articles: GeoArticle[]
 
   const slowResults = await slowRace;
 
-  // Collect all results
+  // Collect all results + source performance
   const allArticles: GeoArticle[] = [];
   const sourcesHit: string[] = [];
+  const sourcePerformance: SourcePerformance[] = [];
+
+  // Map source IDs to names/tiers for performance tracking
+  const sourceMap = new Map<string, { name: string; tier: number }>();
+  sourceMap.set('google', { name: 'Google News', tier: 1 });
+  sourceMap.set('gdelt', { name: 'GDELT', tier: 3 });
+  for (const f of WIRE_FEEDS) sourceMap.set(f.id, { name: f.name, tier: f.tier });
 
   for (const result of [...fastResults, ...slowResults]) {
-    if (result.status === 'fulfilled' && result.value.articles.length > 0) {
-      allArticles.push(...result.value.articles);
-      if (result.value.source) {
-        const srcKey = result.value.source.replace(/_1[hd]$/, '');
+    if (result.status === 'fulfilled') {
+      const { articles: arts, source: src, responseTimeMs } = result.value;
+      if (arts.length > 0) {
+        allArticles.push(...arts);
+      }
+      if (src) {
+        const srcKey = src.replace(/_1[hd]$/, '');
         if (!sourcesHit.includes(srcKey)) sourcesHit.push(srcKey);
+        const meta = sourceMap.get(srcKey);
+        sourcePerformance.push({
+          id: srcKey,
+          name: meta?.name || srcKey,
+          responseTimeMs,
+          articlesDelivered: arts.length,
+          wasHit: arts.length > 0,
+          tier: meta?.tier || 3,
+        });
       }
     }
   }
 
-  return { articles: allArticles, sourcesHit };
+  return { articles: allArticles, sourcesHit, sourcePerformance };
 }
 
 // ── Deduplication & Sorting ──
@@ -409,9 +439,14 @@ async function refreshCache(query: string): Promise<GeoNewsFeed> {
   const startTime = Date.now();
 
   try {
-    const { articles: allArticles, sourcesHit } = await fetchAllWithRace(query);
+    const { articles: allArticles, sourcesHit, sourcePerformance } = await fetchAllWithRace(query);
     const final = deduplicateAndSort(allArticles);
     const latencyMs = Date.now() - startTime;
+
+    // v3.0: compute threat level from articles
+    const prevEntry = cache.get(query);
+    const prevThreatScore = prevEntry?.data.threatLevel?.score;
+    const threatLevel = computeThreatLevel(final, prevThreatScore);
 
     const response: GeoNewsFeed = {
       articles: final,
@@ -420,6 +455,8 @@ async function refreshCache(query: string): Promise<GeoNewsFeed> {
       totalResults: final.length,
       sourcesHit,
       latencyMs,
+      threatLevel,
+      sourcePerformance,
     };
 
     cache.set(query, { data: response, timestamp: Date.now(), isRefreshing: false });
@@ -474,6 +511,8 @@ export async function GET(request: Request) {
       totalResults: 0,
       sourcesHit: [],
       latencyMs: Date.now() - startTime,
+      threatLevel: { severity: 'STABLE', score: 0, dominantCategory: 'none', activeHotspots: [], trend: 'stable', summary: 'Sem dados' },
+      sourcePerformance: [],
     } satisfies GeoNewsFeed);
   }
 }
