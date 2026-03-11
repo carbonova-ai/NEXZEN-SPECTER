@@ -147,7 +147,6 @@ export function useBinanceStream() {
         ref.splice(0, ref.length - MAX_CANDLES);
       }
 
-      candlesRef.current = ref;
       lastKlineCloseRef.current = Date.now();
       setCandles([...ref]);
     }

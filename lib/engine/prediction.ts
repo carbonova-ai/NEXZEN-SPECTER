@@ -236,7 +236,7 @@ export function generatePrediction(
   newsSentimentSignal: number | null = null,
   mlEnsembleSignal: number | null = null,
 ): Prediction | null {
-  if (candles.length < 10) return null;
+  if (candles.length < 50) return null;
 
   const indicators = computeAllIndicators(candles);
 

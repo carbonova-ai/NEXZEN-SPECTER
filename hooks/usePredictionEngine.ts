@@ -146,7 +146,7 @@ export function usePredictionEngine(
   const runCycle = useCallback((isSpike = false) => {
     const price = currentPriceRef.current;
     const cndls = candlesRef.current;
-    if (!price || cndls.length < 10) return;
+    if (!price || cndls.length < 50) return;
 
     setIsCalculating(true);
 
@@ -204,7 +204,7 @@ export function usePredictionEngine(
   const initialRanRef = useRef(false);
   useEffect(() => {
     if (initialRanRef.current) return;
-    if (candles.length >= 10 && currentPrice && !currentPredictionRef.current) {
+    if (candles.length >= 50 && currentPrice && !currentPredictionRef.current) {
       initialRanRef.current = true;
       runCycle();
     }

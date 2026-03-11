@@ -234,17 +234,6 @@ export default function Dashboard() {
         />
       </StatusBar>
 
-      {/* DEBUG PANEL — remove after diagnosing */}
-      <div className="bg-yellow-900/80 text-yellow-200 text-xs font-mono p-2 flex flex-wrap gap-4">
-        <span>candles: {candles.length}</span>
-        <span>price: {tradePrice ?? ticker?.price ?? 'NULL'}</span>
-        <span>binance: {binanceStatus}</span>
-        <span>prediction: {currentPrediction ? `${currentPrediction.direction} ${currentPrediction.confidence} (${currentPrediction.probability.toFixed(2)})` : 'NULL'}</span>
-        <span>nextIn: {nextPredictionIn}s</span>
-        <span>history: {history.length}</span>
-        <span>paperStats: {paperStats ? `trades=${paperStats.totalTrades} skip=${paperStats.skipped} cb=${paperStats.circuitBreakerActive}` : 'NULL'}</span>
-      </div>
-
       {/* Main Content */}
       <main className="flex-1 p-3 md:p-4 space-y-3 md:space-y-4 max-w-[1600px] mx-auto w-full">
         {/* Top Row: Price + Prediction + Polymarket */}
