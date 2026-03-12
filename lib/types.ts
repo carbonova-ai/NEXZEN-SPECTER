@@ -99,6 +99,7 @@ export interface Prediction {
   resolutionSource: 'chainlink' | 'binance';
   signals: SignalBreakdown;
   reasoning: string[];
+  microPrediction?: MicroPrediction;
 }
 
 export type PredictionOutcome = 'WIN' | 'LOSS' | 'PENDING';
@@ -195,6 +196,49 @@ export interface PaperTradingStats {
   peakBankroll: number;
   circuitBreakerActive: boolean;
   bankrollHistory: { timestamp: number; bankroll: number }[];
+}
+
+// ── Micro-Prediction (1min/2min price projections) ──
+
+export interface PriceProjection {
+  timeframeMs: number;          // 60_000 or 120_000
+  projectedPrice: number;       // Estimated price at T+timeframe
+  projectedMove: number;        // % move from current price
+  confidence: number;           // 0-1 confidence in this projection
+  velocity: number;             // $/sec price velocity
+  acceleration: number;         // $/sec² price acceleration
+}
+
+export interface TargetProximity {
+  distancePercent: number;      // % distance from current price to target
+  eta1min: 'BEFORE' | 'AT' | 'BEYOND' | 'UNKNOWN'; // Will price reach target in 1min?
+  eta2min: 'BEFORE' | 'AT' | 'BEYOND' | 'UNKNOWN'; // Will price reach target in 2min?
+  proximityScore: number;       // 0-1 how close we are to target (1 = at target)
+  approachingTarget: boolean;   // Is price moving toward target?
+}
+
+export interface DirectionConviction {
+  direction: PredictionDirection;
+  conviction: 'STRONG' | 'MODERATE' | 'WEAK' | 'DEAD_ZONE';
+  rawScore: number;             // Aggregate score before dead zone
+  safetyScore: number;          // 0-1 overall trade safety (higher = safer)
+  safetyFlags: string[];        // Reasons for low safety
+}
+
+export interface MicroPrediction {
+  projection1min: PriceProjection;
+  projection2min: PriceProjection;
+  targetProximity: TargetProximity;
+  directionConviction: DirectionConviction;
+  tickMomentum: number;         // Short-term tick momentum [-1, +1]
+  tickCount: number;            // Number of ticks in buffer
+  updatedAt: number;            // Timestamp of last micro-update
+}
+
+export interface TickData {
+  price: number;
+  quantity: number;
+  timestamp: number;
 }
 
 // ── Connection ──

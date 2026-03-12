@@ -16,6 +16,7 @@ import {
   interpretVolume,
   interpretVWAP,
 } from '@/lib/indicators';
+import { computeVolatilityAdjustedTarget } from '@/lib/engine/micro-prediction';
 
 function generateId(): string {
   const hex = Math.random().toString(16).substring(2, 10);
@@ -269,12 +270,17 @@ export function generatePrediction(
   signals.aggregateScore = aggregateScore;
 
   const direction = aggregateScore >= 0 ? 'UP' : 'DOWN';
-  const probability = Math.min(0.95, 0.5 + Math.abs(aggregateScore) * 0.45);
+
+  // Probability: penalize scores in dead zone (< 0.015)
+  const absScore = Math.abs(aggregateScore);
+  const deadZonePenalty = absScore < 0.015 ? 0.85 : 1.0;
+  const probability = Math.min(0.95, (0.5 + absScore * 0.45) * deadZonePenalty);
+
   const confidence = computeConfidence(signals, unavailable, indicators);
   const reasoning = buildReasoning(signals, indicators);
 
-  const movePercent = aggregateScore * 0.005; // 0.5% base move — crypto needs to overcome spread costs
-  const targetPrice = currentPrice * (1 + movePercent);
+  // Volatility-adjusted target instead of fixed 0.5% base
+  const targetPrice = computeVolatilityAdjustedTarget(currentPrice, aggregateScore, indicators, candles);
 
   return {
     id: generateId(),

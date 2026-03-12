@@ -10,6 +10,7 @@ import {
   BinanceKlineMessage,
   BinanceAggTradeMessage,
 } from '@/lib/websocket/binance';
+import { TickBuffer } from '@/lib/engine/micro-prediction';
 
 const MAX_CANDLES = 200;
 const TICKER_THROTTLE_MS = 100;
@@ -27,6 +28,9 @@ export function useBinanceStream() {
 
   const candlesRef = useRef<CandleData[]>([]);
   const initializedRef = useRef(false);
+
+  // Tick buffer for micro-predictions — persists across renders
+  const tickBufferRef = useRef(new TickBuffer());
 
   // RAF-batch refs
   const tradePriceRef = useRef<number | null>(null);
@@ -160,11 +164,20 @@ export function useBinanceStream() {
     dirtyRef.current = true;
   }, []);
 
-  // Handle aggTrade
+  // Handle aggTrade — also feed tick buffer for micro-predictions
   const handleTrade = useCallback((data: BinanceAggTradeMessage) => {
     wsDataReceivedRef.current = true;
-    tradePriceRef.current = parseFloat(data.p);
+    const price = parseFloat(data.p);
+    const quantity = parseFloat(data.q);
+    tradePriceRef.current = price;
     dirtyRef.current = true;
+
+    // Feed tick buffer (zero-allocation push)
+    tickBufferRef.current.push({
+      price,
+      quantity,
+      timestamp: data.T || Date.now(),
+    });
   }, []);
 
   // Handle latency
@@ -265,5 +278,5 @@ export function useBinanceStream() {
     };
   }, [handleTicker, handleKline, handleTrade, handleLatency, startRestFallback, stopRestFallback]);
 
-  return { ticker, candles, status, latency, tradePrice, priceIntegrity };
+  return { ticker, candles, status, latency, tradePrice, priceIntegrity, tickBuffer: tickBufferRef.current };
 }

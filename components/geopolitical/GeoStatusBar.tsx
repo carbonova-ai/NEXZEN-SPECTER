@@ -65,7 +65,7 @@ export function GeoStatusBar({
             SP&#926;CT&#926;R GEO
           </h1>
         </Link>
-        <span className="text-[10px] text-nexzen-muted">TRIBUNAL v3.0</span>
+        <span className="text-[10px] text-nexzen-muted">WAR ROOM v3.0</span>
       </div>
 
       <div className="flex items-center gap-4">

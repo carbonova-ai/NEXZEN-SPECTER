@@ -19,6 +19,7 @@ export interface GeoArticle {
   tags: string[]; // auto-extracted topic tags (e.g. "nuclear", "sanctions", "iran")
   clusterId: string | null; // ID of the cluster this article belongs to
   snippetScore: number; // urgency score from snippet analysis (separate from title)
+  theater?: 'iran' | 'ukraine' | 'general'; // which war theater this article belongs to
 }
 
 export interface GeoNewsFeed {

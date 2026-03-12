@@ -238,13 +238,13 @@ export function TribunalPanel({
                 : 'text-nexzen-muted hover:text-nexzen-text'
             }`}
           >
-            {tab === 'tribunal' ? 'TRIBUNAL' : tab === 'history' ? `VEREDICTOS (${verdicts.length})` : 'SETUP'}
+            {tab === 'tribunal' ? 'ANALYSIS' : tab === 'history' ? `VEREDICTOS (${verdicts.length})` : 'SETUP'}
           </button>
         ))}
       </div>
 
       <div className="flex-1 overflow-y-auto p-3" style={{ maxHeight: 'calc(100vh - 220px)' }}>
-        {/* ── TRIBUNAL TAB ── */}
+        {/* ── ANALYSIS TAB ── */}
         {activeTab === 'tribunal' && (
           <div className="space-y-3">
             {!selectedArticle ? (
@@ -418,7 +418,7 @@ export function TribunalPanel({
               <div className="text-center py-8">
                 <p className="text-xs text-nexzen-muted">Nenhum veredicto ainda</p>
                 <p className="text-[9px] text-nexzen-muted/60 mt-1">
-                  Selecione um evento e envie ao tribunal
+                  Selecione um evento e envie para análise
                 </p>
               </div>
             ) : (
@@ -468,13 +468,13 @@ export function TribunalPanel({
                   Abra <a href="https://claude.ai" target="_blank" rel="noopener noreferrer" className="text-amber-500 hover:underline">claude.ai</a> e crie um novo <strong className="text-nexzen-text">Projeto</strong>
                 </li>
                 <li>
-                  Nomeie como <strong className="text-nexzen-text">&quot;SPECTER Tribunal Geopolitico&quot;</strong>
+                  Nomeie como <strong className="text-nexzen-text">&quot;SPECTER War Room&quot;</strong>
                 </li>
                 <li>
                   Em <strong className="text-nexzen-text">&quot;Project Instructions&quot;</strong>, cole as instrucoes abaixo
                 </li>
                 <li>
-                  Pronto! Agora use a aba <strong className="text-amber-500">TRIBUNAL</strong> para enviar eventos
+                  Pronto! Agora use a aba <strong className="text-amber-500">ANALYSIS</strong> para enviar eventos
                 </li>
               </ol>
             </div>
@@ -515,7 +515,7 @@ export function TribunalPanel({
             <div className="bg-nexzen-surface/50 rounded p-3 border border-nexzen-border/10">
               <h4 className="text-[10px] text-nexzen-text font-bold mb-1">Por que um Projeto?</h4>
               <p className="text-[9px] text-nexzen-muted leading-relaxed">
-                Um projeto no Claude mantem o contexto do tribunal permanente.
+                Um projeto no Claude mantem o contexto do War Room permanente.
                 Cada evento que voce julga acumula historico no mesmo chat,
                 permitindo que o Claude identifique padroes e melhore suas analises ao longo do tempo.
                 Zero custo adicional — usa sua assinatura existente.

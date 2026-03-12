@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { CandleData, Prediction, PredictionResult, PerformanceStats, EngineConfig } from '@/lib/types';
+import { CandleData, Prediction, PredictionResult, PerformanceStats, EngineConfig, MicroPrediction } from '@/lib/types';
 import { generatePrediction } from '@/lib/engine/prediction';
 import { evaluatePrediction, calculatePerformance } from '@/lib/engine/backtest';
 import {
@@ -10,6 +10,11 @@ import {
   fetchRecentPredictions,
   savePerformanceSnapshot,
 } from '@/lib/supabase/predictions';
+import {
+  TickBuffer,
+  generateMicroPrediction,
+  computeSignalAgreement,
+} from '@/lib/engine/micro-prediction';
 
 const CYCLE_MS = 300_000; // 5 minutes
 const SPIKE_THRESHOLD = 0.003; // 0.3% price move triggers micro-update
@@ -56,15 +61,18 @@ export function usePredictionEngine(
   chainlinkEdgeSignal: number | null = null,
   chainlinkPrice: number | null = null,
   adaptiveConfig: EngineConfig | null = null,
-  phase5Signals: Phase5Signals = DEFAULT_P5
+  phase5Signals: Phase5Signals = DEFAULT_P5,
+  tickBuffer: TickBuffer | null = null,
 ) {
   const [currentPrediction, setCurrentPrediction] = useState<Prediction | null>(null);
+  const [microPrediction, setMicroPrediction] = useState<MicroPrediction | null>(null);
   const [history, setHistory] = useState<PredictionResult[]>(() => loadHistory());
   const [performance, setPerformance] = useState<PerformanceStats>(() => calculatePerformance(loadHistory()));
   const supabaseLoadedRef = useRef(false);
   const [nextPredictionIn, setNextPredictionIn] = useState<number>(CYCLE_MS / 1000);
   const [isCalculating, setIsCalculating] = useState(false);
   const [spikeDetected, setSpikeDetected] = useState(false);
+  const tickBufferRef2 = useRef(tickBuffer);
 
   const currentPredictionRef = useRef<Prediction | null>(null);
   const cycleStartRef = useRef<number>(0);
@@ -85,6 +93,7 @@ export function usePredictionEngine(
     phase5Ref.current = phase5Signals;
     edgeSignalRef.current = chainlinkEdgeSignal;
     adaptiveConfigRef.current = adaptiveConfig;
+    tickBufferRef2.current = tickBuffer;
   });
 
   // Load history from Supabase on mount
@@ -228,8 +237,53 @@ export function usePredictionEngine(
     return () => clearInterval(timer);
   }, []);
 
+  // ── Micro-prediction real-time loop (every 5s) ──
+  // Updates 1min/2min projections, target proximity, and safety scoring
+  useEffect(() => {
+    const microInterval = setInterval(() => {
+      const pred = currentPredictionRef.current;
+      const price = currentPriceRef.current;
+      const tb = tickBufferRef2.current;
+
+      if (!pred || !price || !tb || tb.length < 5) return;
+
+      // Build signal map for agreement calculation
+      const signalMap: Record<string, number> = {
+        rsi: pred.signals.rsiSignal,
+        macd: pred.signals.macdSignal,
+        sma: pred.signals.smaSignal,
+        bollinger: pred.signals.bollingerSignal,
+        volume: pred.signals.volumeSignal,
+        vwap: pred.signals.vwapSignal,
+        polymarket: pred.signals.polymarketSignal,
+        chainlink: pred.signals.chainlinkDeltaSignal,
+        orderBook: pred.signals.orderBookSignal,
+        fundingRate: pred.signals.fundingRateSignal,
+        onChain: pred.signals.onChainSignal,
+        news: pred.signals.newsSentimentSignal,
+        ml: pred.signals.mlEnsembleSignal,
+      };
+      const agreement = computeSignalAgreement(signalMap, pred.direction);
+
+      const micro = generateMicroPrediction(
+        tb,
+        price,
+        pred.targetPrice,
+        pred.direction,
+        pred.signals.aggregateScore,
+        pred.indicators,
+        agreement,
+      );
+
+      setMicroPrediction(micro);
+    }, 5_000);
+
+    return () => clearInterval(microInterval);
+  }, []);
+
   return {
     currentPrediction,
+    microPrediction,
     history,
     performance,
     nextPredictionIn,

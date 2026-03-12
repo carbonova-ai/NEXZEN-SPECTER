@@ -43,7 +43,7 @@ import { computeMLSignal } from '@/lib/signals/ml-ensemble';
 
 export default function Dashboard() {
   // 1. Binance combined stream (ticker + kline + aggTrade in single WS)
-  const { ticker, candles, status: binanceStatus, latency, tradePrice, priceIntegrity } = useBinanceStream();
+  const { ticker, candles, status: binanceStatus, latency, tradePrice, priceIntegrity, tickBuffer } = useBinanceStream();
 
   // 2. Polymarket data with embedded WebSocket (real-time sentiment)
   const {
@@ -109,6 +109,7 @@ export default function Dashboard() {
   // 5. Prediction engine with all signals (ML now receives real feedback signal)
   const {
     currentPrediction,
+    microPrediction,
     history,
     performance,
     nextPredictionIn,
@@ -125,7 +126,8 @@ export default function Dashboard() {
       onChain: onChainSignal,
       newsSentiment: newsSentimentSignal,
       mlEnsemble: mlFeedbackSignal, // NOW FED FROM PREVIOUS CYCLE
-    }
+    },
+    tickBuffer,
   );
 
   // Train ML on each new prediction and update feedback signal for next cycle
@@ -246,6 +248,8 @@ export default function Dashboard() {
           <PredictionCard
             prediction={currentPrediction}
             nextPredictionIn={nextPredictionIn}
+            microPrediction={microPrediction}
+            currentPrice={tradePrice ?? ticker?.price ?? null}
           />
           <PolymarketPanel
             markets={markets}

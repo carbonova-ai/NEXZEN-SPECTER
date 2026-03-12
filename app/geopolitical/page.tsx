@@ -300,7 +300,7 @@ export default function GeopoliticalDashboard() {
           )}
         </div>
 
-        {/* Center: Tribunal (30%) */}
+        {/* Center: Analysis (30%) */}
         <div className="hidden md:flex md:w-[30%] flex-col min-h-0">
           <TribunalPanel
             selectedArticle={selectedArticle}
@@ -430,7 +430,7 @@ export default function GeopoliticalDashboard() {
           <span className="text-nexzen-border">|</span>
           <span>Correlacoes: {correlations.totalCorrelations} links</span>
           <span className="text-nexzen-border">|</span>
-          <span>Tribunal: Framework Institucional v3.0</span>
+          <span>War Room: Framework Institucional v3.0</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-amber-500/40">SPECTER GEOPOLITICAL v3.0</span>

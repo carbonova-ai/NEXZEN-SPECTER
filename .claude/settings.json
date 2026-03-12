@@ -1,12 +1,18 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx eslint app/ hooks/ components/ lib/)",
-      "Bash(npx next build)",
-      "Bash(curl -s \"http://localhost:3000/api/news/geopolitical?query=geopolitics+OR+war+OR+sanctions+OR+conflict+OR+military+OR+crisis\" -o /tmp/geo_test.json)",
-      "Bash(node -e \"const j=JSON.parse\\(require\\(''fs''\\).readFileSync\\(''C:/Users/thall/AppData/Local/Temp/geo_test.json'',''utf8''\\)\\); console.log\\(''Total:'', j.totalResults\\); console.log\\(''Sources:'', [...new Set\\(j.articles.map\\(a=>a.source\\)\\)].slice\\(0,10\\).join\\('', ''\\)\\); j.articles.slice\\(0,6\\).forEach\\(\\(a,i\\)=>console.log\\(\\(i+1\\)+''. [''+a.source+''] ''+a.title.slice\\(0,80\\)+'' \\(''+a.seenAt+''\\)''\\)\\)\")",
-      "Bash(npx tsc --noEmit)",
-      "Bash(git push:*)"
+      "Bash(*)",
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "Agent(*)",
+      "WebFetch(*)",
+      "WebSearch(*)",
+      "NotebookEdit(*)",
+      "Skill(*)",
+      "TodoWrite(*)"
     ]
   }
 }
