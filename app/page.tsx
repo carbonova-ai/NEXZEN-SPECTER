@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import type { EngineConfig } from '@/lib/types';
 import { useBinanceStream } from '@/hooks/useBinanceStream';
 import { usePolymarketData } from '@/hooks/usePolymarketData';
@@ -100,6 +100,10 @@ export default function Dashboard() {
   // Adaptive config state bridge
   const [adaptiveConfigState, setAdaptiveConfigState] = useState<EngineConfig | null>(null);
 
+  // ── Lifted Polymarket price-to-beat (shared between BeatPriceCard + PredictionEngine) ──
+  const [priceToBeat, setPriceToBeat] = useState<number | null>(null);
+  const handlePriceToBeatChange = useCallback((price: number | null) => setPriceToBeat(price), []);
+
   // 5e. ML Ensemble — uses FEEDBACK from previous cycle (solves circular dependency)
   // Instead of passing null, the ML signal from the previous prediction cycle
   // feeds into the current one. This gives the meta-learner actual influence.
@@ -107,6 +111,8 @@ export default function Dashboard() {
   const mlTrainedCountRef = useRef(0);
 
   // 5. Prediction engine with all signals (ML now receives real feedback signal)
+  //    polymarketTarget = price-to-beat from the 5-min market (when available, replaces algo target)
+  //    polymarketOdds = raw UP/DOWN CLOB odds for probability calibration
   const {
     currentPrediction,
     microPrediction,
@@ -128,6 +134,8 @@ export default function Dashboard() {
       mlEnsemble: mlFeedbackSignal, // NOW FED FROM PREVIOUS CYCLE
     },
     tickBuffer,
+    priceToBeat, // Polymarket price-to-beat → becomes prediction target
+    btc5mData?.odds ?? null, // Raw CLOB odds for probability calibration
   );
 
   // Train ML on each new prediction and update feedback signal for next cycle
@@ -250,6 +258,8 @@ export default function Dashboard() {
             nextPredictionIn={nextPredictionIn}
             microPrediction={microPrediction}
             currentPrice={tradePrice ?? ticker?.price ?? null}
+            polymarketTarget={priceToBeat}
+            polymarketOdds={btc5mData?.odds ?? null}
           />
           <PolymarketPanel
             markets={markets}
@@ -271,6 +281,8 @@ export default function Dashboard() {
           polyData={btc5mData}
           polyLoading={btc5mLoading}
           polyError={btc5mError}
+          priceToBeat={priceToBeat}
+          onPriceToBeatChange={handlePriceToBeatChange}
         />
 
         {/* Chart */}

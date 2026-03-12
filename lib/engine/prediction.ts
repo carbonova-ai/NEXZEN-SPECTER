@@ -236,6 +236,10 @@ export function generatePrediction(
   onChainSignal: number | null = null,
   newsSentimentSignal: number | null = null,
   mlEnsembleSignal: number | null = null,
+  // Polymarket 5-min market integration
+  polymarketTarget: number | null = null,
+  polymarketUpOdds: number | null = null,
+  polymarketDownOdds: number | null = null,
 ): Prediction | null {
   if (candles.length < 50) return null;
 
@@ -269,18 +273,94 @@ export function generatePrediction(
   const aggregateScore = Number.isFinite(rawScore) ? rawScore : 0;
   signals.aggregateScore = aggregateScore;
 
-  const direction = aggregateScore >= 0 ? 'UP' : 'DOWN';
+  const hasPolyTarget = polymarketTarget !== null && polymarketTarget > 0;
 
-  // Probability: penalize scores in dead zone (< 0.015)
-  const absScore = Math.abs(aggregateScore);
-  const deadZonePenalty = absScore < 0.015 ? 0.85 : 1.0;
-  const probability = Math.min(0.95, (0.5 + absScore * 0.45) * deadZonePenalty);
-
-  const confidence = computeConfidence(signals, unavailable, indicators);
+  // ══════════════════════════════════════════════════════════
+  // POLYMARKET TARGET MODE: direction = will price beat target?
+  // When we have the Polymarket price-to-beat, the prediction
+  // becomes "UP = price will be ABOVE target at resolution"
+  // rather than generic "price will go up."
+  // ══════════════════════════════════════════════════════════
+  let direction: 'UP' | 'DOWN';
+  let probability: number;
+  let targetPrice: number;
   const reasoning = buildReasoning(signals, indicators);
 
-  // Volatility-adjusted target instead of fixed 0.5% base
-  const targetPrice = computeVolatilityAdjustedTarget(currentPrice, aggregateScore, indicators, candles);
+  if (hasPolyTarget) {
+    targetPrice = polymarketTarget;
+
+    // Distance from current price to target as a directional signal
+    const distToTarget = (currentPrice - polymarketTarget) / polymarketTarget;
+
+    // Combine: technical signals (aggregateScore) + price position relative to target
+    // Price position is a strong signal: if price is already $50 above target, UP is likely
+    const pricePositionSignal = Math.max(-1, Math.min(1, distToTarget / 0.003)); // ±0.3% saturates
+
+    // Weighted combination: price position (40%) + technicals (30%) + CLOB odds (30%)
+    let clobSignal = 0;
+    if (polymarketUpOdds !== null && polymarketDownOdds !== null) {
+      // CLOB odds: up=0.7 means market prices 70% chance of UP → signal = +0.4
+      clobSignal = (polymarketUpOdds - polymarketDownOdds);
+    }
+
+    const combinedScore =
+      pricePositionSignal * 0.35 +
+      Math.max(-1, Math.min(1, aggregateScore * 5)) * 0.30 + // Scale aggregateScore to [-1,1]
+      clobSignal * 0.35;
+
+    direction = combinedScore >= 0 ? 'UP' : 'DOWN';
+
+    // ── PROBABILITY: Bayesian fusion of signals + CLOB ──
+    // Start with base probability from combined score magnitude
+    const absCombo = Math.abs(combinedScore);
+    let baseProbability = 0.5 + absCombo * 0.35; // [0.5, 0.85] range
+
+    // CLOB calibration: Polymarket CLOB odds are market-efficient
+    // When our signals agree with CLOB, boost probability
+    // When they disagree, dampen it (the market may know something we don't)
+    if (polymarketUpOdds !== null && polymarketDownOdds !== null) {
+      const clobProb = direction === 'UP' ? polymarketUpOdds : polymarketDownOdds;
+      // Bayesian-style fusion: weight CLOB at 40%, model at 60%
+      baseProbability = baseProbability * 0.6 + clobProb * 0.4;
+
+      // Agreement bonus: when CLOB and model agree strongly
+      const clobDirection = polymarketUpOdds >= polymarketDownOdds ? 'UP' : 'DOWN';
+      if (clobDirection === direction && clobProb > 0.6) {
+        baseProbability = Math.min(0.95, baseProbability * 1.08);
+      }
+      // Disagreement penalty
+      if (clobDirection !== direction && clobProb > 0.6) {
+        baseProbability *= 0.88;
+      }
+    }
+
+    // Dead zone penalty for very close to target
+    if (Math.abs(distToTarget) < 0.0001) {
+      baseProbability *= 0.9; // Too close to call
+    }
+
+    probability = Math.max(0.05, Math.min(0.95, baseProbability));
+
+    // Enhanced reasoning for Polymarket mode
+    reasoning.unshift(
+      `Polymarket target: $${polymarketTarget.toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
+      `Price ${distToTarget >= 0 ? 'above' : 'below'} target by ${(Math.abs(distToTarget) * 100).toFixed(3)}%`
+    );
+    if (polymarketUpOdds !== null) {
+      reasoning.push(`CLOB odds: UP ${(polymarketUpOdds * 100).toFixed(1)}% / DOWN ${((polymarketDownOdds ?? 0) * 100).toFixed(1)}%`);
+    }
+  } else {
+    // ── FALLBACK: Original algo target mode ──
+    direction = aggregateScore >= 0 ? 'UP' : 'DOWN';
+
+    const absScore = Math.abs(aggregateScore);
+    const deadZonePenalty = absScore < 0.015 ? 0.85 : 1.0;
+    probability = Math.min(0.95, (0.5 + absScore * 0.45) * deadZonePenalty);
+
+    targetPrice = computeVolatilityAdjustedTarget(currentPrice, aggregateScore, indicators, candles);
+  }
+
+  const confidence = computeConfidence(signals, unavailable, indicators);
 
   return {
     id: generateId(),

@@ -54,6 +54,11 @@ const DEFAULT_P5: Phase5Signals = {
   orderBook: null, fundingRate: null, onChain: null, newsSentiment: null, mlEnsemble: null,
 };
 
+export interface PolymarketOdds {
+  up: number | null;
+  down: number | null;
+}
+
 export function usePredictionEngine(
   candles: CandleData[],
   currentPrice: number | null,
@@ -63,6 +68,8 @@ export function usePredictionEngine(
   adaptiveConfig: EngineConfig | null = null,
   phase5Signals: Phase5Signals = DEFAULT_P5,
   tickBuffer: TickBuffer | null = null,
+  polymarketTarget: number | null = null,
+  polymarketOdds: PolymarketOdds | null = null,
 ) {
   const [currentPrediction, setCurrentPrediction] = useState<Prediction | null>(null);
   const [microPrediction, setMicroPrediction] = useState<MicroPrediction | null>(null);
@@ -86,6 +93,8 @@ export function usePredictionEngine(
   const edgeSignalRef = useRef(chainlinkEdgeSignal);
   const adaptiveConfigRef = useRef(adaptiveConfig);
   const phase5Ref = useRef(phase5Signals);
+  const polyTargetRef = useRef(polymarketTarget);
+  const polyOddsRef = useRef(polymarketOdds);
   useEffect(() => {
     candlesRef.current = candles;
     currentPriceRef.current = currentPrice;
@@ -94,6 +103,8 @@ export function usePredictionEngine(
     edgeSignalRef.current = chainlinkEdgeSignal;
     adaptiveConfigRef.current = adaptiveConfig;
     tickBufferRef2.current = tickBuffer;
+    polyTargetRef.current = polymarketTarget;
+    polyOddsRef.current = polymarketOdds;
   });
 
   // Load history from Supabase on mount
@@ -163,13 +174,17 @@ export function usePredictionEngine(
     resolvePrevious(price);
 
     // Generate new prediction with all signals + adaptive weights
+    // When polymarketTarget is set, it overrides the algo target and recalibrates direction/probability
     const config = adaptiveConfigRef.current ?? undefined;
     const p5 = phase5Ref.current;
     const prediction = generatePrediction(
       cndls, price, sentimentRef.current,
       edgeSignalRef.current, chainlinkPriceRef.current,
       config,
-      p5.orderBook, p5.fundingRate, p5.onChain, p5.newsSentiment, p5.mlEnsemble
+      p5.orderBook, p5.fundingRate, p5.onChain, p5.newsSentiment, p5.mlEnsemble,
+      polyTargetRef.current,
+      polyOddsRef.current?.up ?? null,
+      polyOddsRef.current?.down ?? null,
     );
     currentPredictionRef.current = prediction;
     setCurrentPrediction(prediction);
@@ -177,6 +192,36 @@ export function usePredictionEngine(
 
     if (prediction) {
       savePrediction(prediction).catch(() => {});
+
+      // Immediately generate first micro-prediction (don't wait 5s)
+      const tb = tickBufferRef2.current;
+      if (tb && tb.length >= 5) {
+        const signalMap: Record<string, number> = {
+          rsi: prediction.signals.rsiSignal,
+          macd: prediction.signals.macdSignal,
+          sma: prediction.signals.smaSignal,
+          bollinger: prediction.signals.bollingerSignal,
+          volume: prediction.signals.volumeSignal,
+          vwap: prediction.signals.vwapSignal,
+          polymarket: prediction.signals.polymarketSignal,
+          chainlink: prediction.signals.chainlinkDeltaSignal,
+          orderBook: prediction.signals.orderBookSignal,
+          fundingRate: prediction.signals.fundingRateSignal,
+          onChain: prediction.signals.onChainSignal,
+          news: prediction.signals.newsSentimentSignal,
+          ml: prediction.signals.mlEnsembleSignal,
+        };
+        const agreement = computeSignalAgreement(signalMap, prediction.direction);
+        // Use live Polymarket target when available
+        const liveTarget = polyTargetRef.current && polyTargetRef.current > 0
+          ? polyTargetRef.current
+          : prediction.targetPrice;
+        const micro = generateMicroPrediction(
+          tb, price, liveTarget, prediction.direction,
+          prediction.signals.aggregateScore, prediction.indicators, agreement,
+        );
+        setMicroPrediction(micro);
+      }
     }
 
     if (isSpike) {
@@ -210,6 +255,7 @@ export function usePredictionEngine(
   }, [currentPrice, runCycle]);
 
   // Initial prediction — run once when we have enough data
+  // Uses both effect trigger AND polling fallback for robustness
   const initialRanRef = useRef(false);
   useEffect(() => {
     if (initialRanRef.current) return;
@@ -219,11 +265,42 @@ export function usePredictionEngine(
     }
   }, [candles.length, currentPrice, runCycle]);
 
+  // Fallback: if initial prediction hasn't fired after 3s, poll every 500ms
+  // Handles edge case where React batching causes effect to miss the trigger
+  useEffect(() => {
+    if (initialRanRef.current) return;
+    const fallback = setInterval(() => {
+      if (initialRanRef.current) { clearInterval(fallback); return; }
+      const price = currentPriceRef.current;
+      const cndls = candlesRef.current;
+      if (price && cndls.length >= 50 && !currentPredictionRef.current) {
+        initialRanRef.current = true;
+        clearInterval(fallback);
+        runCycle();
+      }
+    }, 500);
+    const timeout = setTimeout(() => clearInterval(fallback), 30_000); // Give up after 30s
+    return () => { clearInterval(fallback); clearTimeout(timeout); };
+  }, [runCycle]);
+
   // Regular 5-minute prediction cycle — stable interval that never resets
   useEffect(() => {
     const interval = setInterval(() => runCycle(), CYCLE_MS);
     return () => clearInterval(interval);
   }, [runCycle]);
+
+  // ── Polymarket target change → instant recalculation ──
+  // When the user overrides the target or a new 5-min window auto-captures a price,
+  // regenerate the prediction immediately so direction/probability update in real-time.
+  const lastPolyTargetRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (polymarketTarget === null || polymarketTarget === lastPolyTargetRef.current) return;
+    lastPolyTargetRef.current = polymarketTarget;
+    // Only re-run if we already have an active prediction (don't trigger before initial)
+    if (currentPredictionRef.current && initialRanRef.current) {
+      runCycle();
+    }
+  }, [polymarketTarget, runCycle]);
 
   // Countdown timer
   useEffect(() => {
@@ -239,6 +316,7 @@ export function usePredictionEngine(
 
   // ── Micro-prediction real-time loop (every 5s) ──
   // Updates 1min/2min projections, target proximity, and safety scoring
+  // Uses live polymarketTarget when available (reacts to user overrides in real-time)
   useEffect(() => {
     const microInterval = setInterval(() => {
       const pred = currentPredictionRef.current;
@@ -246,6 +324,11 @@ export function usePredictionEngine(
       const tb = tickBufferRef2.current;
 
       if (!pred || !price || !tb || tb.length < 5) return;
+
+      // Use live Polymarket target if available, otherwise fall back to prediction's target
+      const liveTarget = polyTargetRef.current && polyTargetRef.current > 0
+        ? polyTargetRef.current
+        : pred.targetPrice;
 
       // Build signal map for agreement calculation
       const signalMap: Record<string, number> = {
@@ -268,7 +351,7 @@ export function usePredictionEngine(
       const micro = generateMicroPrediction(
         tb,
         price,
-        pred.targetPrice,
+        liveTarget,
         pred.direction,
         pred.signals.aggregateScore,
         pred.indicators,

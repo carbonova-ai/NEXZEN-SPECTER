@@ -15,6 +15,9 @@ interface BeatPriceCardProps {
   polyData: Btc5mData;
   polyLoading: boolean;
   polyError: string | null;
+  /** Lifted price-to-beat state (shared with prediction engine) */
+  priceToBeat: number | null;
+  onPriceToBeatChange: (price: number | null) => void;
 }
 
 type Signal = 'BUY_UP' | 'BUY_DOWN' | 'WAIT';
@@ -135,7 +138,7 @@ function useSignalTracker() {
   return { stats, recordSignal, resolveSignals };
 }
 
-export function BeatPriceCard({ currentPrice, chainlinkDelta, chainlinkPrice, candles, fundingRateSignal, orderBookSignal, polyData, polyLoading, polyError }: BeatPriceCardProps) {
+export function BeatPriceCard({ currentPrice, chainlinkDelta, chainlinkPrice, candles, fundingRateSignal, orderBookSignal, polyData, polyLoading, polyError, priceToBeat, onPriceToBeatChange }: BeatPriceCardProps) {
   const momentum = useTickMomentum(currentPrice);
   const { vwap, deviation: vwapDeviation } = useVWAP(candles);
   const { stats: signalStats, recordSignal, resolveSignals } = useSignalTracker();
@@ -157,16 +160,12 @@ export function BeatPriceCard({ currentPrice, chainlinkDelta, chainlinkPrice, ca
   const secs = Math.floor((remaining % 60000) / 1000);
   const isWindowActive = windowEnd > now && windowStart <= now;
 
-  // ── Auto-capture price-to-beat at window start ──
-  const [priceToBeat, setPriceToBeat] = useState<number | null>(null);
+  // ── Auto-capture price-to-beat at window start (now lifted to parent) ──
   const [manualOverride, setManualOverride] = useState('');
   const lastWindowRef = useRef(0);
 
   useEffect(() => {
     if (windowStart > 0 && windowStart !== lastWindowRef.current) {
-      // Prefer Chainlink price — Polymarket resolves against the oracle, not Binance spot.
-      // Chainlink lags ~3-10s behind Binance; using it as the baseline avoids a systematic
-      // bias where the "price to beat" is always slightly ahead of the resolution price.
       const capturePrice = (chainlinkPrice !== null && chainlinkPrice !== undefined)
         ? chainlinkPrice
         : currentPrice;
@@ -174,12 +173,12 @@ export function BeatPriceCard({ currentPrice, chainlinkDelta, chainlinkPrice, ca
         lastWindowRef.current = windowStart;
         if (!manualOverride) {
           const price = capturePrice;
-          const timeout = setTimeout(() => setPriceToBeat(price), 0);
+          const timeout = setTimeout(() => onPriceToBeatChange(price), 0);
           return () => clearTimeout(timeout);
         }
       }
     }
-  }, [windowStart, currentPrice, chainlinkPrice, manualOverride]);
+  }, [windowStart, currentPrice, chainlinkPrice, manualOverride, onPriceToBeatChange]);
 
   // Resolve signals at window transition
   useEffect(() => {
@@ -191,8 +190,8 @@ export function BeatPriceCard({ currentPrice, chainlinkDelta, chainlinkPrice, ca
   const handleOverride = (val: string) => {
     setManualOverride(val);
     const parsed = parseFloat(val);
-    if (!isNaN(parsed) && parsed > 0) setPriceToBeat(parsed);
-    else if (val === '') setPriceToBeat(null);
+    if (!isNaN(parsed) && parsed > 0) onPriceToBeatChange(parsed);
+    else if (val === '') onPriceToBeatChange(null);
   };
 
   const upOdds = polyData?.odds?.up ?? null;

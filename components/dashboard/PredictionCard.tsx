@@ -2,11 +2,18 @@
 
 import { Prediction, MicroPrediction } from '@/lib/types';
 
+interface PolymarketOdds {
+  up: number | null;
+  down: number | null;
+}
+
 interface PredictionCardProps {
   prediction: Prediction | null;
   nextPredictionIn: number;
   microPrediction?: MicroPrediction | null;
   currentPrice?: number | null;
+  polymarketTarget?: number | null;
+  polymarketOdds?: PolymarketOdds | null;
 }
 
 function SignalBar({ label, value }: { label: string; value: number }) {
@@ -137,7 +144,7 @@ function ProjectionRow({ label, projection, currentPrice }: {
   );
 }
 
-export function PredictionCard({ prediction, nextPredictionIn, microPrediction, currentPrice }: PredictionCardProps) {
+export function PredictionCard({ prediction, nextPredictionIn, microPrediction, currentPrice, polymarketTarget, polymarketOdds }: PredictionCardProps) {
   if (!prediction) {
     return (
       <div className="glass-card p-4">
@@ -164,6 +171,9 @@ export function PredictionCard({ prediction, nextPredictionIn, microPrediction, 
 
   const micro = microPrediction;
   const price = currentPrice ?? prediction.entryPrice;
+  const hasPolyTarget = polymarketTarget != null && polymarketTarget > 0;
+  const upOdds = polymarketOdds?.up ?? null;
+  const downOdds = polymarketOdds?.down ?? null;
 
   return (
     <div className="glass-card p-4">
@@ -196,8 +206,10 @@ export function PredictionCard({ prediction, nextPredictionIn, microPrediction, 
           <span className="tabular-nums">${prediction.entryPrice.toLocaleString('en-US', { maximumFractionDigits: 2 })}</span>
         </div>
         <div>
-          <span className="text-nexzen-muted">Target: </span>
-          <span className="tabular-nums">${prediction.targetPrice.toLocaleString('en-US', { maximumFractionDigits: 2 })}</span>
+          <span className="text-nexzen-muted">{hasPolyTarget ? 'Target' : 'Target'}: </span>
+          <span className={`tabular-nums ${hasPolyTarget ? 'text-nexzen-accent font-bold' : ''}`}>
+            ${prediction.targetPrice.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+          </span>
         </div>
         {currentPrice && (
           <div>
@@ -219,6 +231,36 @@ export function PredictionCard({ prediction, nextPredictionIn, microPrediction, 
           Entry via Binance · Resolve via {prediction.resolutionSource === 'chainlink' ? 'Chainlink Oracle' : 'Binance'}
         </div>
       </div>
+
+      {/* Polymarket CLOB Odds — inline when available */}
+      {hasPolyTarget && upOdds !== null && downOdds !== null && (
+        <div className="border-t border-nexzen-border pt-2 mb-3">
+          <div className="flex items-center justify-between text-[10px] mb-1.5">
+            <span className="uppercase tracking-wider text-nexzen-muted">CLOB ODDS</span>
+            <span className="text-[8px] text-nexzen-muted/40">POLYMARKET 5min</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex-1">
+              <div className="flex items-center justify-between text-[10px] mb-0.5">
+                <span className="text-nexzen-primary font-bold">UP</span>
+                <span className="text-nexzen-primary tabular-nums font-bold">{(upOdds * 100).toFixed(1)}%</span>
+              </div>
+              <div className="h-1.5 rounded-full bg-nexzen-surface overflow-hidden">
+                <div className="h-full bg-nexzen-primary/60 rounded-full transition-all duration-500" style={{ width: `${upOdds * 100}%` }} />
+              </div>
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center justify-between text-[10px] mb-0.5">
+                <span className="text-nexzen-danger font-bold">DOWN</span>
+                <span className="text-nexzen-danger tabular-nums font-bold">{(downOdds * 100).toFixed(1)}%</span>
+              </div>
+              <div className="h-1.5 rounded-full bg-nexzen-surface overflow-hidden">
+                <div className="h-full bg-nexzen-danger/60 rounded-full transition-all duration-500" style={{ width: `${downOdds * 100}%` }} />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Micro-Prediction: Projections + Target Proximity */}
       {micro && micro.tickCount >= 10 && (
